@@ -37,15 +37,20 @@ const toState=d=>{
   const harga={};(d.harga_material||[]).forEach(h=>{harga[h.material_id]=toNum(h.harga);});
   const stok={};(d.stok_material||[]).forEach(s=>{stok[s.material_id]=toNum(s.qty);});
   const items=(d.paket_items||[]).map(i=>({...i,qty:toNum(i.qty),harga:toNum(i.harga)}));
-  return{mats:d.materials||[],harga,stok,
-    jenisKain:(d.jenis_kain||[]).map(j=>({id:j.id,nama:j.nama,kodePrefix:j.kode_prefix||j.kodePrefix||'',harga:toNum(j.harga)})),
-    kainList:(d.stok_kain||[]).map(k=>({...k,jenisId:k.jenis_id||k.jenisId||'',jenisNama:k.jenis_nama||k.jenisNama||'',kodePrefix:k.kode_prefix||k.kodePrefix||'',meter:toNum(k.meter),sisa:toNum(k.sisa)})),
+  return{
+    mats:d.materials||[],harga,stok,
+    jenisKain:(d.jenis_kain||[]).map(j=>({id:j.id,nama:j.nama,kodePrefix:j.kode_prefix||j.kodePrefix||"",harga:toNum(j.harga)})),
+    kainList:(d.stok_kain||[]).map(k=>({...k,jenisId:k.jenis_id||k.jenisId||"",jenisNama:k.jenis_nama||k.jenisNama||"",kodePrefix:k.kode_prefix||k.kodePrefix||"",meter:toNum(k.meter),sisa:toNum(k.sisa)})),
     pkgs:(d.pakets||[]).map(p=>({...p,hpp:toNum(p.hpp),items:items.filter(i=>String(i.paket_id)===String(p.id))})),
-    trxs:[...(d.transaksi||[])].reverse()};
+    trxs:[...(d.transaksi||[])].reverse()
+  };
 };
 
 const C={pri:"#1a237e",sec:"#283593",acc:"#2196f3",ok:"#43a047",warn:"#fb8c00",err:"#e53935",bg:"#eef2f7"};
+const CAT_COLORS={"Kain":"#5c6bc0","Interlining":"#00897b","Aksesoris":"#f4511e","Packaging":"#8d6e63"};
+const CAT_ICONS={"Kain":"🧵","Interlining":"🪡","Aksesoris":"📎","Packaging":"📦"};
 
+// ─── ATOMS ───────────────────────────────────────────────
 const Notif=({n})=>!n?null:<div style={{position:"fixed",bottom:24,right:24,padding:"12px 20px",background:n.t==="err"?C.err:C.ok,color:"#fff",borderRadius:10,boxShadow:"0 4px 16px rgba(0,0,0,.2)",fontSize:14,zIndex:9999,maxWidth:340}}>{n.m}</div>;
 const Card=({children,style})=><div style={{background:"#fff",borderRadius:12,padding:20,boxShadow:"0 2px 8px rgba(0,0,0,.07)",...style}}>{children}</div>;
 const Btn=({children,onClick,bg=C.pri,style,disabled,loading})=><button onClick={onClick} disabled={disabled||loading} style={{background:(disabled||loading)?"#aaa":bg,color:"#fff",border:"none",borderRadius:8,padding:"9px 18px",cursor:(disabled||loading)?"not-allowed":"pointer",fontSize:13,fontWeight:600,...style}}>{loading?"⏳ Menyimpan...":children}</button>;
@@ -64,16 +69,15 @@ const Sel=({label,value,onChange,options})=>(
   </div>
 );
 const Badge=({label,color})=><span style={{background:color+"22",color,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>{label}</span>;
-
 function Modal({title,onClose,children,w=520}){return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}><div style={{background:"#fff",borderRadius:16,width:w,maxWidth:"100%",maxHeight:"90vh",overflowY:"auto"}}><div style={{padding:"16px 20px",borderBottom:"1px solid #eee",display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{fontWeight:700,fontSize:16,color:C.pri}}>{title}</span><button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:"#aaa",lineHeight:1}}>×</button></div><div style={{padding:20}}>{children}</div></div></div>);}
-
 const TH=({cols})=><thead><tr>{cols.map(c=><th key={c} style={{background:"#f5f7fa",padding:"10px 12px",textAlign:"left",fontSize:12,fontWeight:700,color:"#555",borderBottom:"2px solid #e8eaf0",whiteSpace:"nowrap"}}>{c}</th>)}</tr></thead>;
 const TD=({children,style})=><td style={{padding:"10px 12px",borderBottom:"1px solid #f0f2f5",fontSize:13,...style}}>{children}</td>;
 const Tbl=({children})=><div style={{overflowX:"auto"}}><table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>{children}</table></div>;
 function Pagination({page,total,onChange}){if(total<=1)return null;return(<div style={{display:"flex",justifyContent:"center",gap:6,marginTop:16}}>{Array.from({length:total},(_,i)=>i+1).map(p=><button key={p} onClick={()=>onChange(p)} style={{padding:"6px 12px",borderRadius:6,border:"none",cursor:"pointer",background:p===page?C.pri:"#f0f0f0",color:p===page?"#fff":"#333",fontSize:13}}>{p}</button>)}</div>);}
-function StatCard({icon,label,value,color,sub}){return(<Card style={{display:"flex",alignItems:"center",gap:14}}><div style={{width:50,height:50,borderRadius:12,background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{icon}</div><div><div style={{fontSize:12,color:"#888",marginBottom:3}}>{label}</div><div style={{fontSize:20,fontWeight:700,color}}>{value}</div>{sub&&<div style={{fontSize:11,color:"#aaa",marginTop:2}}>{sub}</div>}</div></Card>);}
+function StatCard({icon,label,value,color,sub}){return(<Card style={{display:"flex",alignItems:"center",gap:14}}><div style={{width:50,height:50,borderRadius:12,background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>{icon}</div><div><div style={{fontSize:12,color:"#888",marginBottom:3}}>{label}</div><div style={{fontSize:18,fontWeight:700,color}}>{value}</div>{sub&&<div style={{fontSize:11,color:"#aaa",marginTop:2}}>{sub}</div>}</div></Card>);}
 function Barcode({kode}){const bars=[];let x=6;for(let ci=0;ci<kode.length;ci++){const code=kode.charCodeAt(ci);for(let b=0;b<7;b++){const bit=(code>>b)&1,w=bit?2.5:1.2;bars.push(<rect key={`${ci}-${b}`} x={x} y={4} width={w} height={44} fill="#111"/>);x+=w+1.2;}x+=3;}const W=Math.min(x+12,340);return(<div style={{textAlign:"center"}}><svg width={W} height={68} viewBox={`0 0 ${x+12} 68`} style={{maxWidth:"100%",border:"1px solid #eee",borderRadius:6,padding:4,background:"#fff"}}>{bars}<text x={(x+12)/2} y={62} textAnchor="middle" fontSize={9} fontFamily="monospace" fill="#333">{kode}</text></svg><div style={{marginTop:8,fontFamily:"monospace",fontSize:14,fontWeight:700,letterSpacing:2,color:"#333"}}>{kode}</div></div>);}
 
+// ─── LOADING ─────────────────────────────────────────────
 function LoadingScreen({error,onRetry}){return(
   <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",height:"100vh",background:`linear-gradient(135deg,${C.pri},${C.sec})`,gap:20}}>
     <div style={{fontSize:64}}>👔</div>
@@ -92,8 +96,12 @@ function LoadingScreen({error,onRetry}){return(
   </div>
 );}
 
+// ─── LOGIN ───────────────────────────────────────────────
 function LoginPage({onLogin}){
-  const [sel,setSel]=useState(null);const [pw,setPw]=useState("");const [url,setUrl]=useState(localStorage.getItem("tarda_api_url")||"");const [err,setErr]=useState("");
+  const [sel,setSel]=useState(null);
+  const [pw,setPw]=useState("");
+  const [url,setUrl]=useState(localStorage.getItem("tarda_api_url")||"");
+  const [err,setErr]=useState("");
   const PWS={owner:"052731",admin:"1234"};
   const login=()=>{
     if(!url.trim())return setErr("Masukkan URL Google Apps Script!");
@@ -101,7 +109,10 @@ function LoginPage({onLogin}){
     if(!sel)return setErr("Pilih role dulu!");
     if(pw!==PWS[sel])return setErr("Password salah!");
     localStorage.setItem("tarda_api_url",url.trim());
-    API=url.trim();onLogin(sel);
+    sessionStorage.setItem("tarda_role",sel);
+    sessionStorage.setItem("tarda_api",url.trim());
+    API=url.trim();
+    onLogin(sel);
   };
   return(<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:`linear-gradient(135deg,${C.pri},${C.sec})`}}>
     <div style={{background:"#fff",borderRadius:20,padding:40,width:420,maxWidth:"calc(100vw - 32px)",boxShadow:"0 20px 60px rgba(0,0,0,.3)"}}>
@@ -125,11 +136,14 @@ function LoginPage({onLogin}){
   </div>);
 }
 
+// ─── PAKET DETAIL ────────────────────────────────────────
 function PaketDetailModal({pkg,onClose}){if(!pkg)return null;return(<Modal title="📋 Detail Paket" onClose={onClose} w={580}><Barcode kode={pkg.kode}/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,margin:"16px 0",fontSize:13}}><div style={{background:"#f9f9f9",borderRadius:8,padding:"10px 12px"}}><div style={{color:"#888",fontSize:11}}>NAMA PAKET</div><b>{pkg.nama}</b></div><div style={{background:"#f9f9f9",borderRadius:8,padding:"10px 12px"}}><div style={{color:"#888",fontSize:11}}>CUSTOMER</div><b>{pkg.customer||"–"}</b></div><div style={{background:"#f9f9f9",borderRadius:8,padding:"10px 12px"}}><div style={{color:"#888",fontSize:11}}>TANGGAL</div><b>{pkg.tanggal}</b></div><div style={{background:"#f9f9f9",borderRadius:8,padding:"10px 12px"}}><div style={{color:"#888",fontSize:11}}>STATUS</div><Badge label={pkg.status} color={pkg.status==="pending"?C.warn:C.ok}/></div></div>{pkg.deskripsi&&<div style={{background:"#e8eaf6",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:13,color:C.sec}}>{pkg.deskripsi}</div>}<div style={{fontWeight:700,fontSize:13,marginBottom:8,color:C.pri}}>Detail Material:</div><Tbl><TH cols={["Material","Qty","Satuan","Harga/Satuan","Subtotal"]}/><tbody>{pkg.items.map((it,i)=>(<tr key={i}><TD><b>{it.nama}</b></TD><TD>{it.qty}</TD><TD>{it.satuan}</TD><TD>{fmtRp(it.harga)}</TD><TD><b style={{color:C.ok}}>{fmtRp(it.qty*it.harga)}</b></TD></tr>))}</tbody></Tbl><div style={{marginTop:12,padding:"14px 0",borderTop:"2px solid #eee",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontWeight:700,fontSize:15}}>Total HPP</span><span style={{fontWeight:700,fontSize:22,color:C.ok}}>{fmtRp(pkg.hpp)}</span></div></Modal>);}
 
+// ─── DASHBOARD ───────────────────────────────────────────
 function Dashboard({mats,stok,harga,kainList,pkgs,jenisKain,onViewPaket}){
-  const low=mats.filter(m=>(stok[m.id]||0)<10);const aktif=kainList.filter(k=>k.status==="aktif");
-  const nilai=useMemo(()=>mats.reduce((s,m)=>s+(stok[m.id]||0)*(harga[m.id]||0),0)+aktif.reduce((s,k)=>{const jk=jenisKain.find(j=>j.id===k.jenisId);return s+(k.sisa||0)*(jk?.harga||0);},0),[mats,stok,harga,aktif,jenisKain]);
+  const low=mats.filter(m=>(stok[m.id]||0)<10);
+  const aktif=kainList.filter(k=>k.status==="aktif");
+  const totalNilai=useMemo(()=>mats.reduce((s,m)=>s+(stok[m.id]||0)*(harga[m.id]||0),0)+aktif.reduce((s,k)=>{const jk=jenisKain.find(j=>j.id===k.jenisId);return s+(k.sisa||0)*(jk?.harga||0);},0),[mats,stok,harga,aktif,jenisKain]);
   return(<div>
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:14,marginBottom:18}}>
       <StatCard icon="📦" label="Total Material" value={mats.length} color={C.acc}/>
@@ -138,7 +152,7 @@ function Dashboard({mats,stok,harga,kainList,pkgs,jenisKain,onViewPaket}){
       <StatCard icon="📋" label="Order Pending" value={pkgs.filter(p=>p.status==="pending").length} color={C.pri}/>
     </div>
     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-      <Card><div style={{fontSize:13,color:"#888",marginBottom:6}}>💰 Estimasi Nilai Stok</div><div style={{fontSize:26,fontWeight:700,color:C.ok}}>{fmtRp(nilai)}</div><div style={{fontSize:11,color:"#bbb",marginTop:4}}>material + kain aktif</div></Card>
+      <Card><div style={{fontSize:13,color:"#888",marginBottom:6}}>💰 Estimasi Nilai Stok</div><div style={{fontSize:26,fontWeight:700,color:C.ok}}>{fmtRp(totalNilai)}</div><div style={{fontSize:11,color:"#bbb",marginTop:4}}>material + kain aktif · lihat detail di menu Nilai Stok</div></Card>
       <Card><div style={{fontSize:13,color:"#888",marginBottom:10}}>⚠️ Stok Menipis</div>{low.length===0?<div style={{color:C.ok,fontSize:13}}>✅ Semua stok aman</div>:low.map(m=>(<div key={m.id} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f5f5f5",fontSize:13}}><span>{m.nama}</span><Badge label={`${stok[m.id]||0} ${m.satuan}`} color={C.err}/></div>))}</Card>
     </div>
     <Card><div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>📋 Paket Terbaru <span style={{fontWeight:400,fontSize:12,color:"#aaa"}}>(klik untuk detail)</span></div>
@@ -147,6 +161,84 @@ function Dashboard({mats,stok,harga,kainList,pkgs,jenisKain,onViewPaket}){
   </div>);
 }
 
+// ─── NILAI STOK (MENU BARU) ──────────────────────────────
+function NilaiStok({mats,stok,harga,kainList,jenisKain}){
+  const [sortBy,setSortBy]=useState("nilai");
+  const [sortDir,setSortDir]=useState("desc");
+  const [filterKat,setFilterKat]=useState("Semua");
+
+  const kainAktif=kainList.filter(k=>k.status==="aktif");
+  const kainItems=kainAktif.map(k=>{
+    const jk=jenisKain.find(j=>j.id===k.jenisId);
+    const h=jk?.harga||0;
+    return{id:k.id,nama:`${k.jenisNama} ${k.kode}`,kategori:"Kain",qty:k.sisa,satuan:"meter",harga:h,nilai:k.sisa*h,customer:k.customer||""};
+  });
+  const matItems=mats.map(m=>({id:m.id,nama:m.nama,kategori:m.kategori||"Material",qty:stok[m.id]||0,satuan:m.satuan,harga:harga[m.id]||0,nilai:(stok[m.id]||0)*(harga[m.id]||0)}));
+  const allItems=[...kainItems,...matItems];
+  const totalAll=allItems.reduce((s,i)=>s+i.nilai,0);
+
+  const categories=useMemo(()=>["Semua","Kain",...new Set(mats.map(m=>m.kategori).filter(Boolean))]  ,[mats]);
+
+  const filtered=useMemo(()=>{
+    let l=filterKat==="Semua"?allItems:allItems.filter(i=>i.kategori===filterKat);
+    return[...l].sort((a,b)=>{
+      const cmp=sortBy==="nilai"?b.nilai-a.nilai:a.nama.localeCompare(b.nama);
+      return sortDir==="asc"?-cmp:cmp;
+    });
+  },[allItems,filterKat,sortBy,sortDir]);
+
+  const totalFiltered=filtered.reduce((s,i)=>s+i.nilai,0);
+
+  const catTotals=useMemo(()=>{
+    const c={};
+    allItems.forEach(i=>{if(!c[i.kategori])c[i.kategori]=0;c[i.kategori]+=i.nilai;});
+    return c;
+  },[allItems]);
+
+  return(<div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(170px,1fr))",gap:14,marginBottom:18}}>
+      <StatCard icon="💰" label="Total Nilai Stok" value={fmtRp(totalAll)} color={C.ok}/>
+      {Object.entries(catTotals).map(([cat,val])=>(
+        <StatCard key={cat} icon={CAT_ICONS[cat]||"📦"} label={cat} value={fmtRp(val)} color={CAT_COLORS[cat]||C.acc}/>
+      ))}
+    </div>
+    <Card>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {categories.map(cat=>(<button key={cat} onClick={()=>setFilterKat(cat)} style={{padding:"5px 14px",borderRadius:20,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:filterKat===cat?C.pri:"#f0f0f0",color:filterKat===cat?"#fff":"#555"}}>{cat}</button>))}
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <select value={sortBy} onChange={e=>setSortBy(e.target.value)} style={{border:"1px solid #ddd",borderRadius:8,padding:"7px 10px",fontSize:13}}>
+            <option value="nilai">Sort: Nilai</option>
+            <option value="nama">Sort: Nama</option>
+          </select>
+          <button onClick={()=>setSortDir(d=>d==="asc"?"desc":"asc")} style={{border:"1px solid #ddd",borderRadius:8,padding:"7px 10px",fontSize:13,cursor:"pointer",background:"#fff",minWidth:110}}>
+            {sortDir==="desc"?"↓ Tertinggi":"↑ Terendah"}
+          </button>
+        </div>
+      </div>
+      <Tbl><TH cols={["Nama Item","Kategori","Qty","Harga/Satuan","Nilai"]}/><tbody>
+        {filtered.map(i=>(<tr key={i.id}>
+          <TD><b>{i.nama}</b>{i.customer&&<span style={{fontSize:11,color:"#aaa",marginLeft:6}}>({i.customer})</span>}</TD>
+          <TD><Badge label={i.kategori} color={CAT_COLORS[i.kategori]||C.acc}/></TD>
+          <TD>{i.qty} {i.satuan}</TD>
+          <TD>{fmtRp(i.harga)}/{i.satuan}</TD>
+          <TD><b style={{color:C.ok}}>{fmtRp(i.nilai)}</b></TD>
+        </tr>))}
+        <tr>
+          <td colSpan={4} style={{padding:"12px 12px",fontWeight:700,fontSize:14,borderTop:"2px solid #eee",color:C.pri}}>
+            Total{filterKat!=="Semua"?` — ${filterKat}`:""}
+          </td>
+          <td style={{padding:"12px 12px",fontWeight:800,fontSize:16,color:C.ok,borderTop:"2px solid #eee"}}>
+            {fmtRp(totalFiltered)}
+          </td>
+        </tr>
+      </tbody></Tbl>
+    </Card>
+  </div>);
+}
+
+// ─── MASTER MATERIAL ─────────────────────────────────────
 function MasterMaterial({mats,setMats,harga,showNotif,role}){
   const canEdit=role==="owner";const [search,setSearch]=useState("");const [modal,setModal]=useState(false);const [edit,setEdit]=useState(null);const [f,setF]=useState({kode:"",nama:"",satuan:"",kategori:""});const [saving,setSaving]=useState(false);const [pg,setPg]=useState(1);const PS=10;
   const list=useMemo(()=>mats.filter(m=>m.nama.toLowerCase().includes(search.toLowerCase())||m.kode.toLowerCase().includes(search.toLowerCase())),[mats,search]);
@@ -161,17 +253,29 @@ function MasterMaterial({mats,setMats,harga,showNotif,role}){
         <input placeholder="🔍 Cari material..." value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:240}}/>
         {canEdit&&<Btn onClick={()=>open()}>+ Tambah Material</Btn>}
       </div>
-      <Tbl><TH cols={["Kode","Nama","Satuan","Kategori","Harga",canEdit?"Aksi":""]}/><tbody>{paged.map(m=>(<tr key={m.id}><TD><span style={{fontFamily:"monospace",fontSize:12}}>{m.kode}</span></TD><TD><b>{m.nama}</b></TD><TD>{m.satuan}</TD><TD><Badge label={m.kategori} color={C.acc}/></TD><TD>{harga[m.id]?<span style={{fontWeight:600,color:C.ok}}>{fmtRp(harga[m.id])}/{m.satuan}</span>:<span style={{color:"#bbb"}}>–</span>}</TD><TD>{canEdit&&<div style={{display:"flex",gap:6}}><Ghost onClick={()=>open(m)} style={{padding:"5px 10px",fontSize:12}}>✏️</Ghost><Ghost onClick={()=>del(m)} style={{padding:"5px 10px",fontSize:12,color:C.err}}>🗑️</Ghost></div>}</TD></tr>))}</tbody></Tbl>
+      <Tbl><TH cols={["Kode","Nama","Satuan","Kategori","Harga",canEdit?"Aksi":""]}/><tbody>{paged.map(m=>(<tr key={m.id}><TD><span style={{fontFamily:"monospace",fontSize:12}}>{m.kode}</span></TD><TD><b>{m.nama}</b></TD><TD>{m.satuan}</TD><TD><Badge label={m.kategori} color={CAT_COLORS[m.kategori]||C.acc}/></TD><TD>{harga[m.id]?<span style={{fontWeight:600,color:C.ok}}>{fmtRp(harga[m.id])}/{m.satuan}</span>:<span style={{color:"#bbb"}}>–</span>}</TD><TD>{canEdit&&<div style={{display:"flex",gap:6}}><Ghost onClick={()=>open(m)} style={{padding:"5px 10px",fontSize:12}}>✏️</Ghost><Ghost onClick={()=>del(m)} style={{padding:"5px 10px",fontSize:12,color:C.err}}>🗑️</Ghost></div>}</TD></tr>))}</tbody></Tbl>
       <Pagination page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/>
     </Card>
     {modal&&canEdit&&<Modal title={edit?"Edit Material":"Tambah Material"} onClose={()=>setModal(false)}><Inp label="Kode *" value={f.kode} onChange={v=>setF(x=>({...x,kode:v}))} placeholder="RSL-002"/><Inp label="Nama *" value={f.nama} onChange={v=>setF(x=>({...x,nama:v}))} placeholder="Resletting"/><Inp label="Satuan *" value={f.satuan} onChange={v=>setF(x=>({...x,satuan:v}))} placeholder="pcs/meter/cone"/><Inp label="Kategori" value={f.kategori} onChange={v=>setF(x=>({...x,kategori:v}))} placeholder="Aksesoris"/><div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setModal(false)}>Batal</Ghost><Btn onClick={save} loading={saving}>Simpan</Btn></div></Modal>}
   </div>);
 }
 
+// ─── MASTER HARGA ────────────────────────────────────────
 function MasterHarga({mats,harga,setHarga,jenisKain,setJenisKain,showNotif,role}){
   const canEdit=role==="owner";const [tab,setTab]=useState("mat");const [editId,setEditId]=useState(null);const [editVal,setEditVal]=useState("");const [jkModal,setJkModal]=useState(false);const [jkEdit,setJkEdit]=useState(null);const [jkF,setJkF]=useState({nama:"",kodePrefix:"",harga:""});const [search,setSearch]=useState("");const [saving,setSaving]=useState(false);
   const saveH=async id=>{setSaving(true);try{await apPost({action:"saveHarga",payload:{material_id:id,harga:parseInt(editVal)||0}});setHarga(p=>({...p,[id]:parseInt(editVal)||0}));setEditId(null);showNotif("Harga disimpan!");}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
-  const saveJk=async()=>{if(!jkF.nama||!jkF.kodePrefix||!jkF.harga)return showNotif("Lengkapi semua field!","err");const np=jkF.kodePrefix.trim().toUpperCase();if(!jkEdit&&jenisKain.find(j=>j.kodePrefix===np))return showNotif("Prefix sudah ada!","err");const id=jkEdit?jkEdit.id:genId();const apiPayload={id,nama:jkF.nama,kode_prefix:np,harga:parseInt(jkF.harga)};const stateItem={id,nama:jkF.nama,kodePrefix:np,harga:parseInt(jkF.harga)};setSaving(true);try{await apPost({action:"saveJenisKain",payload:apiPayload});jkEdit?setJenisKain(p=>p.map(j=>j.id===jkEdit.id?stateItem:j)):setJenisKain(p=>[...p,stateItem]);showNotif("Disimpan!");setJkModal(false);}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
+  const saveJk=async()=>{
+    if(!jkF.nama||!jkF.kodePrefix||!jkF.harga)return showNotif("Lengkapi semua field!","err");
+    const np=jkF.kodePrefix.trim().toUpperCase();
+    if(!jkEdit&&jenisKain.find(j=>j.kodePrefix===np))return showNotif("Prefix sudah ada!","err");
+    const id=jkEdit?jkEdit.id:genId();
+    const apiPayload={id,nama:jkF.nama,kode_prefix:np,harga:parseInt(jkF.harga)};
+    const stateItem={id,nama:jkF.nama,kodePrefix:np,harga:parseInt(jkF.harga)};
+    setSaving(true);
+    try{await apPost({action:"saveJenisKain",payload:apiPayload});jkEdit?setJenisKain(p=>p.map(j=>j.id===jkEdit.id?stateItem:j)):setJenisKain(p=>[...p,stateItem]);showNotif("Disimpan!");setJkModal(false);}
+    catch(e){showNotif("Gagal: "+e.message,"err");}
+    setSaving(false);
+  };
   const delJk=async j=>{if(!confirm(`Hapus ${j.nama}?`))return;try{await apPost({action:"deleteJenisKain",id:j.id});setJenisKain(p=>p.filter(x=>x.id!==j.id));showNotif("Dihapus!");}catch(e){showNotif("Gagal: "+e.message,"err");}};
   const filteredJk=useMemo(()=>jenisKain.filter(j=>j.nama.toLowerCase().includes(search.toLowerCase())||j.kodePrefix.toLowerCase().includes(search.toLowerCase())),[jenisKain,search]);
   const TabBtn=({id,label})=><button onClick={()=>setTab(id)} style={{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?C.pri:"#f0f0f0",color:tab===id?"#fff":"#333",fontWeight:600,fontSize:13}}>{label}</button>;
@@ -184,37 +288,89 @@ function MasterHarga({mats,harga,setHarga,jenisKain,setJenisKain,showNotif,role}
         <div><div style={{fontWeight:700,fontSize:14,color:C.pri}}>Jenis Kain & Harga/Meter</div><div style={{fontSize:12,color:"#aaa",marginTop:2}}>Berlaku semua warna dalam 1 jenis kain</div></div>
         <div style={{display:"flex",gap:8}}><input placeholder="🔍 Cari..." value={search} onChange={e=>setSearch(e.target.value)} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:180}}/>{canEdit&&<Btn onClick={()=>{setJkEdit(null);setJkF({nama:"",kodePrefix:"",harga:""});setJkModal(true);}}>+ Tambah</Btn>}</div>
       </div>
-      <div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#3949ab"}}>💡 Prefix <b>HB017</b> + Warna <b>NAVY</b> → Kode: <b>HB017-NAVY</b></div>
+      <div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#3949ab"}}>💡 Prefix <b>HB017</b> + Warna <b>024</b> → Kode lengkap: <b>HB017-024</b></div>
       <Tbl><TH cols={["Nama Jenis","Kode Prefix","Harga/Meter",canEdit?"Aksi":""]}/><tbody>{filteredJk.map(j=>(<tr key={j.id}><TD><b>{j.nama}</b></TD><TD><span style={{fontFamily:"monospace",background:"#e8eaf6",color:C.pri,padding:"3px 10px",borderRadius:6,fontSize:13,fontWeight:700}}>{j.kodePrefix}</span></TD><TD><span style={{fontWeight:700,color:C.ok}}>{fmtRp(j.harga)}/meter</span></TD><TD>{canEdit&&<div style={{display:"flex",gap:6}}><Ghost onClick={()=>{setJkEdit(j);setJkF({nama:j.nama,kodePrefix:j.kodePrefix,harga:j.harga});setJkModal(true);}} style={{padding:"5px 10px",fontSize:12}}>✏️</Ghost><Ghost onClick={()=>delJk(j)} style={{padding:"5px 10px",fontSize:12,color:C.err}}>🗑️</Ghost></div>}</TD></tr>))}</tbody></Tbl>
     </Card>}
-    {jkModal&&canEdit&&<Modal title={jkEdit?"Edit Jenis Kain":"Tambah Jenis Kain"} onClose={()=>setJkModal(false)} w={440}><Inp label="Nama Jenis Kain *" value={jkF.nama} onChange={v=>setJkF(x=>({...x,nama:v}))} placeholder="Suprima"/><Inp label="Kode Prefix *" value={jkF.kodePrefix} onChange={v=>setJkF(x=>({...x,kodePrefix:v.toUpperCase()}))} placeholder="HB017" note="Otomatis huruf kapital"/>{jkF.kodePrefix&&<div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.pri}}>Contoh: <b style={{fontFamily:"monospace"}}>{jkF.kodePrefix}-NAVY</b></div>}<Inp label="Harga per Meter (Rp) *" type="number" value={jkF.harga} onChange={v=>setJkF(x=>({...x,harga:v}))} placeholder="85000"/><div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setJkModal(false)}>Batal</Ghost><Btn onClick={saveJk} loading={saving}>Simpan</Btn></div></Modal>}
+    {jkModal&&canEdit&&<Modal title={jkEdit?"Edit Jenis Kain":"Tambah Jenis Kain"} onClose={()=>setJkModal(false)} w={440}>
+      <Inp label="Nama Jenis Kain *" value={jkF.nama} onChange={v=>setJkF(x=>({...x,nama:v}))} placeholder="Suprima"/>
+      <Inp label="Kode Prefix *" value={jkF.kodePrefix} onChange={v=>setJkF(x=>({...x,kodePrefix:v.toUpperCase()}))} placeholder="HB017" note="Otomatis huruf kapital"/>
+      {jkF.kodePrefix&&<div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.pri}}>Contoh: <b style={{fontFamily:"monospace"}}>{jkF.kodePrefix}-024</b></div>}
+      <Inp label="Harga per Meter (Rp) *" type="number" value={jkF.harga} onChange={v=>setJkF(x=>({...x,harga:v}))} placeholder="100000"/>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setJkModal(false)}>Batal</Ghost><Btn onClick={saveJk} loading={saving}>Simpan</Btn></div>
+    </Modal>}
   </div>);
 }
 
+// ─── STOK KAIN ───────────────────────────────────────────
 function StokKain({kainList,setKainList,jenisKain,showNotif,addTrx}){
-  const [search,setSearch]=useState("");const [cust,setCust]=useState("");const [modal,setModal]=useState(false);const [f,setF]=useState({jenisId:"",warna:"",tipe:"roll",meter:"",customer:"",tanggal:todayStr()});const [saving,setSaving]=useState(false);const [pg,setPg]=useState(1);const PS=10;
-  const aktif=kainList.filter(k=>k.status==="aktif");const custs=[...new Set(aktif.map(k=>k.customer))];
-  const selJenis=jenisKain.find(j=>j.id===f.jenisId);const kodePreview=selJenis&&f.warna?`${selJenis.kodePrefix}-${f.warna.toUpperCase()}`:(selJenis?`${selJenis.kodePrefix}-...`:"–");
+  const [search,setSearch]=useState("");const [cust,setCust]=useState("");const [modal,setModal]=useState(false);
+  const [f,setF]=useState({jenisId:"",warna:"",tipe:"roll",meter:"",customer:"",tanggal:todayStr()});
+  const [saving,setSaving]=useState(false);const [pg,setPg]=useState(1);const PS=10;
+  const aktif=kainList.filter(k=>k.status==="aktif");
+  const custs=[...new Set(aktif.filter(k=>k.customer).map(k=>k.customer))];
+  const selJenis=jenisKain.find(j=>j.id===f.jenisId);
+  const kodePreview=selJenis&&f.warna?`${selJenis.kodePrefix}-${f.warna.toUpperCase()}`:(selJenis?`${selJenis.kodePrefix}-...`:"–");
   const list=useMemo(()=>{let l=aktif;if(search)l=l.filter(k=>k.kode.toLowerCase().includes(search.toLowerCase())||k.jenisNama.toLowerCase().includes(search.toLowerCase())||k.customer.toLowerCase().includes(search.toLowerCase()));if(cust)l=l.filter(k=>k.customer===cust);return l;},[aktif,search,cust]);
   const paged=list.slice((pg-1)*PS,pg*PS);
-  const save=async()=>{if(!f.jenisId||!f.warna||!f.meter||!f.customer)return showNotif("Lengkapi semua field!","err");const jk=jenisKain.find(j=>j.id===f.jenisId);const kode=`${jk.kodePrefix}-${f.warna.trim().toUpperCase()}`;if(kainList.find(k=>k.kode===kode&&k.status==="aktif"))return showNotif(`Kode ${kode} sudah aktif!`,"err");const id=genId();const stateEntry={id,kode,jenisId:f.jenisId,jenisNama:jk.nama,kodePrefix:jk.kodePrefix,warna:f.warna.trim().toUpperCase(),tipe:f.tipe,meter:parseFloat(f.meter),sisa:parseFloat(f.meter),customer:f.customer,tanggal:f.tanggal,status:"aktif"};const apiEntry={id,kode,jenis_id:f.jenisId,jenis_nama:jk.nama,kode_prefix:jk.kodePrefix,warna:stateEntry.warna,tipe:f.tipe,meter:stateEntry.meter,sisa:stateEntry.sisa,customer:f.customer,tanggal:f.tanggal,status:"aktif"};const trx={id:genId(),type:"inbound",detail:`Kain masuk: ${jk.nama} ${kode} — ${f.customer}`,tanggal:new Date().toISOString()};setSaving(true);try{await apPost({action:"saveStokKain",payload:apiEntry});await apPost({action:"saveTransaksi",payload:trx});setKainList(p=>[...p,stateEntry]);addTrx("inbound",trx.detail,[]);showNotif(`Kain ${kode} berhasil ditambah!`);setModal(false);}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
+
+  const save=async()=>{
+    if(!f.jenisId||!f.warna||!f.meter)return showNotif("Lengkapi semua field!","err");
+    // Customer hanya wajib untuk kain potongan
+    if(f.tipe==="potongan"&&!f.customer)return showNotif("Nama customer wajib untuk kain potongan!","err");
+    const jk=jenisKain.find(j=>j.id===f.jenisId);
+    const kode=`${jk.kodePrefix}-${f.warna.trim().toUpperCase()}`;
+    if(kainList.find(k=>k.kode===kode&&k.status==="aktif"))return showNotif(`Kode ${kode} sudah aktif!`,"err");
+    const id=genId();
+    const stateEntry={id,kode,jenisId:f.jenisId,jenisNama:jk.nama,kodePrefix:jk.kodePrefix,warna:f.warna.trim().toUpperCase(),tipe:f.tipe,meter:parseFloat(f.meter),sisa:parseFloat(f.meter),customer:f.customer,tanggal:f.tanggal,status:"aktif"};
+    const apiEntry={id,kode,jenis_id:f.jenisId,jenis_nama:jk.nama,kode_prefix:jk.kodePrefix,warna:stateEntry.warna,tipe:f.tipe,meter:stateEntry.meter,sisa:stateEntry.sisa,customer:f.customer,tanggal:f.tanggal,status:"aktif"};
+    const trx={id:genId(),type:"inbound",detail:`Kain masuk: ${jk.nama} ${kode}${f.customer?" — "+f.customer:""}`,tanggal:new Date().toISOString()};
+    setSaving(true);
+    try{await apPost({action:"saveStokKain",payload:apiEntry});await apPost({action:"saveTransaksi",payload:trx});setKainList(p=>[...p,stateEntry]);addTrx("inbound",trx.detail);showNotif(`Kain ${kode} berhasil ditambah!`);setModal(false);}
+    catch(e){showNotif("Gagal: "+e.message,"err");}
+    setSaving(false);
+  };
+
   const arsip=async k=>{if(!confirm(`Arsipkan ${k.kode}?`))return;try{await apPost({action:"updateStokKain",id:k.id,fields:{status:"arsip"}});setKainList(p=>p.map(x=>x.id===k.id?{...x,status:"arsip"}:x));showNotif("Diarsipkan!");}catch(e){showNotif("Gagal: "+e.message,"err");}};
+
   return(<div>
     <Card>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}><input placeholder="🔍 Cari kode / jenis / customer..." value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:250}}/><select value={cust} onChange={e=>{setCust(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13}}><option value="">Semua Customer</option>{custs.map(c=><option key={c} value={c}>{c}</option>)}</select></div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <input placeholder="🔍 Cari kode / jenis / customer..." value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:260}}/>
+          <select value={cust} onChange={e=>{setCust(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13}}>
+            <option value="">Semua Customer</option>{custs.map(c=><option key={c} value={c}>{c}</option>)}
+          </select>
+        </div>
         <Btn onClick={()=>{setF({jenisId:jenisKain[0]?.id||"",warna:"",tipe:"roll",meter:"",customer:"",tanggal:todayStr()});setModal(true);}}>+ Tambah Kain</Btn>
       </div>
-      <Tbl><TH cols={["Kode Lengkap","Jenis Kain","Warna","Tipe","Total","Sisa","Customer","Tgl","Aksi"]}/><tbody>{paged.map(k=>(<tr key={k.id}><TD><div style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:C.pri}}>{k.kode}</div></TD><TD>{k.jenisNama}</TD><TD><Badge label={k.warna||"–"} color="#5c6bc0"/></TD><TD><Badge label={k.tipe} color={k.tipe==="roll"?C.acc:C.warn}/></TD><TD>{k.meter} m</TD><TD><span style={{fontWeight:700,color:k.sisa<1?C.err:C.ok}}>{k.sisa} m</span></TD><TD>{k.customer}</TD><TD style={{fontSize:12}}>{k.tanggal}</TD><TD><Ghost onClick={()=>arsip(k)} style={{padding:"5px 10px",fontSize:12,color:C.warn}}>🗃️</Ghost></TD></tr>))}</tbody></Tbl>
+      <Tbl><TH cols={["Kode Lengkap","Jenis Kain","Warna","Tipe","Total","Sisa","Customer","Tgl","Aksi"]}/><tbody>
+        {paged.map(k=>(<tr key={k.id}><TD><div style={{fontFamily:"monospace",fontSize:12,fontWeight:700,color:C.pri}}>{k.kode}</div></TD><TD>{k.jenisNama}</TD><TD><Badge label={k.warna||"–"} color="#5c6bc0"/></TD><TD><Badge label={k.tipe} color={k.tipe==="roll"?C.acc:C.warn}/></TD><TD>{k.meter} m</TD><TD><span style={{fontWeight:700,color:k.sisa<1?C.err:C.ok}}>{k.sisa} m</span></TD><TD>{k.customer||<span style={{color:"#ccc"}}>–</span>}</TD><TD style={{fontSize:12}}>{k.tanggal}</TD><TD><Ghost onClick={()=>arsip(k)} style={{padding:"5px 10px",fontSize:12,color:C.warn}}>🗃️</Ghost></TD></tr>))}
+      </tbody></Tbl>
       <Pagination page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/>
     </Card>
+
     {modal&&<Modal title="Tambah Kain Masuk" onClose={()=>setModal(false)}>
       <Sel label="Jenis Kain *" value={f.jenisId} onChange={v=>setF(x=>({...x,jenisId:v}))} options={jenisKain.map(j=>({v:j.id,l:`${j.nama}  [${j.kodePrefix}]  —  ${fmtRp(j.harga)}/m`}))}/>
-      <Inp label="Kode Warna *" value={f.warna} onChange={v=>setF(x=>({...x,warna:v.toUpperCase()}))} placeholder="NAVY / RED / 001" note="Otomatis huruf kapital"/>
+      <Inp label="Kode Warna *" value={f.warna} onChange={v=>setF(x=>({...x,warna:v.toUpperCase()}))} placeholder="024 / NAVY / RED" note="Otomatis huruf kapital"/>
       <div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}><div style={{fontSize:12,color:"#555"}}>Kode lengkap:</div><div style={{fontFamily:"monospace",fontSize:16,fontWeight:700,color:C.pri}}>{kodePreview}</div></div>
-      <div style={{marginBottom:12}}><label style={{fontSize:12,color:"#555",marginBottom:6,display:"block",fontWeight:600}}>Tipe *</label><div style={{display:"flex",gap:8}}>{["roll","potongan"].map(t=>(<button key={t} onClick={()=>setF(x=>({...x,tipe:t}))} style={{flex:1,padding:10,borderRadius:8,border:`2px solid ${f.tipe===t?C.pri:"#ddd"}`,background:f.tipe===t?C.pri+"15":"#fff",color:f.tipe===t?C.pri:"#333",fontWeight:600,cursor:"pointer",fontSize:13}}>{t==="roll"?"🎞️ Roll":"✂️ Potongan"}</button>))}</div></div>
+      <div style={{marginBottom:12}}>
+        <label style={{fontSize:12,color:"#555",marginBottom:6,display:"block",fontWeight:600}}>Tipe *</label>
+        <div style={{display:"flex",gap:8}}>
+          {["roll","potongan"].map(t=>(<button key={t} onClick={()=>setF(x=>({...x,tipe:t,customer:""}))} style={{flex:1,padding:10,borderRadius:8,border:`2px solid ${f.tipe===t?C.pri:"#ddd"}`,background:f.tipe===t?C.pri+"15":"#fff",color:f.tipe===t?C.pri:"#333",fontWeight:600,cursor:"pointer",fontSize:13}}>{t==="roll"?"🎞️ Roll":"✂️ Potongan"}</button>))}
+        </div>
+      </div>
       <Inp label="Total Meter *" type="number" value={f.meter} onChange={v=>setF(x=>({...x,meter:v}))} placeholder="25" min="0.1" step="0.1"/>
-      <Inp label="Nama Customer *" value={f.customer} onChange={v=>setF(x=>({...x,customer:v}))} placeholder="Ibu Sari"/>
+
+      {/* Customer hanya untuk potongan */}
+      {f.tipe==="potongan"&&(
+        <Inp label="Nama Customer *" value={f.customer} onChange={v=>setF(x=>({...x,customer:v}))} placeholder="Ibu Sari"/>
+      )}
+      {f.tipe==="roll"&&(
+        <div style={{background:"#e8f5e9",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.ok}}>
+          ℹ️ Kain roll tidak memerlukan nama customer
+        </div>
+      )}
+
       <Inp label="Tanggal Masuk" type="date" value={f.tanggal} onChange={v=>setF(x=>({...x,tanggal:v}))}/>
       {selJenis&&<div style={{background:"#f9fbe7",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13}}>💰 {fmtRp(selJenis.harga)}/meter{f.meter&&<span style={{color:"#888"}}> — Total: <b>{fmtRp(selJenis.harga*parseFloat(f.meter||0))}</b></span>}</div>}
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setModal(false)}>Batal</Ghost><Btn onClick={save} loading={saving}>Simpan</Btn></div>
@@ -222,6 +378,7 @@ function StokKain({kainList,setKainList,jenisKain,showNotif,addTrx}){
   </div>);
 }
 
+// ─── BUAT PAKET ──────────────────────────────────────────
 function BuatPaket({mats,kainList,stok,harga,jenisKain,pkgs,setPkgs,showNotif}){
   const aktifKain=kainList.filter(k=>k.status==="aktif");const [nama,setNama]=useState("");const [customer,setCustomer]=useState("");const [deskripsi,setDeskripsi]=useState("");const [search,setSearch]=useState("");const [catFilter,setCatFilter]=useState("Semua");const [selected,setSelected]=useState({});const [saving,setSaving]=useState(false);
   const allPickable=useMemo(()=>[...mats.map(m=>({id:m.id,type:"material",nama:m.nama,satuan:m.satuan,kategori:m.kategori,stok:stok[m.id]||0,harga:harga[m.id]||0})),...aktifKain.map(k=>{const jk=jenisKain.find(j=>j.id===k.jenisId);return{id:k.id,type:"kain",nama:`${k.jenisNama} ${k.kode}`,satuan:"meter",kategori:"Kain",stok:k.sisa,harga:jk?.harga||0};})]  ,[mats,aktifKain,stok,harga,jenisKain]);
@@ -239,6 +396,7 @@ function BuatPaket({mats,kainList,stok,harga,jenisKain,pkgs,setPkgs,showNotif}){
   </div>);
 }
 
+// ─── DAFTAR PAKET ────────────────────────────────────────
 function DaftarPaket({pkgs,setPkgs,onViewPaket,showNotif,role}){
   const canEdit=role==="owner";const [search,setSearch]=useState("");const [statusF,setStatusF]=useState("all");const [pg,setPg]=useState(1);const PS=10;
   const list=useMemo(()=>{let l=pkgs;if(search)l=l.filter(p=>p.nama.toLowerCase().includes(search.toLowerCase())||p.kode.toLowerCase().includes(search.toLowerCase())||(p.customer||"").toLowerCase().includes(search.toLowerCase()));if(statusF!=="all")l=l.filter(p=>p.status===statusF);return l;},[pkgs,search,statusF]);
@@ -255,10 +413,11 @@ function DaftarPaket({pkgs,setPkgs,onViewPaket,showNotif,role}){
   </div>);
 }
 
+// ─── MENU ORDER ──────────────────────────────────────────
 function MenuOrder({pkgs,setPkgs,stok,setStok,kainList,setKainList,addTrx,showNotif}){
   const [input,setInput]=useState("");const [found,setFound]=useState(null);const [notFound,setNotFound]=useState(false);const [saving,setSaving]=useState(false);
   const doSearch=()=>{const p=pkgs.find(x=>x.kode===input.trim());if(p){setFound(p);setNotFound(false);}else{setFound(null);setNotFound(true);}};
-  const process=async()=>{setSaving(true);try{await apPost({action:"processOrder",paketId:found.id,items:found.items});const detail=`Order keluar: ${found.nama} (${found.kode})`;await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,tanggal:new Date().toISOString()}});const ns={...stok};found.items.filter(i=>i.type==="material").forEach(i=>{ns[i.ref_id||i.refId]=(ns[i.ref_id||i.refId]||0)-i.qty;});setStok(ns);setKainList(p=>p.map(k=>{const ki=found.items.find(i=>i.type==="kain"&&(i.ref_id||i.refId)===k.id);if(!ki)return k;const s=+(k.sisa-ki.qty).toFixed(3);return{...k,sisa:Math.max(0,s),status:s<=0?"arsip":k.status};}));setPkgs(p=>p.map(x=>x.id===found.id?{...x,status:"selesai"}:x));addTrx("outbound",detail,found.items);showNotif(`✅ Order ${found.kode} berhasil!`);setFound(null);setInput("");}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
+  const process=async()=>{setSaving(true);try{await apPost({action:"processOrder",paketId:found.id,items:found.items});const detail=`Order keluar: ${found.nama} (${found.kode})`;await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,tanggal:new Date().toISOString()}});const ns={...stok};found.items.filter(i=>i.type==="material").forEach(i=>{ns[i.ref_id||i.refId]=(ns[i.ref_id||i.refId]||0)-i.qty;});setStok(ns);setKainList(p=>p.map(k=>{const ki=found.items.find(i=>i.type==="kain"&&(i.ref_id||i.refId)===k.id);if(!ki)return k;const s=+(k.sisa-ki.qty).toFixed(3);return{...k,sisa:Math.max(0,s),status:s<=0?"arsip":k.status};}));setPkgs(p=>p.map(x=>x.id===found.id?{...x,status:"selesai"}:x));addTrx("outbound",detail);showNotif(`✅ Order ${found.kode} berhasil!`);setFound(null);setInput("");}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
   return(<div style={{maxWidth:600,margin:"0 auto"}}>
     <Card><div style={{textAlign:"center",fontWeight:700,fontSize:16,color:C.pri,marginBottom:20}}>🔍 Scan / Input Kode Paket</div>
       <div style={{display:"flex",gap:8}}><input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doSearch()} placeholder="Scan barcode atau ketik kode paket..." autoFocus style={{flex:1,border:"2px solid #ddd",borderRadius:10,padding:"12px 16px",fontSize:15,outline:"none",boxSizing:"border-box"}}/><Btn onClick={doSearch} style={{padding:"12px 20px",fontSize:14}}>Cari</Btn></div>
@@ -268,10 +427,11 @@ function MenuOrder({pkgs,setPkgs,stok,setStok,kainList,setKainList,addTrx,showNo
   </div>);
 }
 
+// ─── INBOUND / OUTBOUND ──────────────────────────────────
 function InboundOutbound({mats,stok,setStok,addTrx,showNotif}){
   const [tab,setTab]=useState("inbound");const [f,setF]=useState({mid:mats[0]?.id||"",qty:"",tanggal:todayStr(),ket:""});const [saving,setSaving]=useState(false);
   const mat=mats.find(m=>m.id===f.mid);
-  const save=async()=>{if(!f.qty||parseFloat(f.qty)<=0)return showNotif("Masukkan jumlah!","err");const q=parseFloat(f.qty);if(tab==="outbound"&&(stok[f.mid]||0)<q)return showNotif(`Stok tidak cukup! (${stok[f.mid]||0} ${mat?.satuan})`,"err");const newQty=(stok[f.mid]||0)+(tab==="inbound"?q:-q);const detail=`${mat?.nama} ${tab==="inbound"?"masuk":"keluar"}: ${q} ${mat?.satuan}${f.ket?" — "+f.ket:""}`;setSaving(true);try{await apPost({action:"updateStok",payload:{material_id:f.mid,qty:newQty}});await apPost({action:"saveTransaksi",payload:{id:genId(),type:tab,detail,tanggal:new Date().toISOString()}});setStok(p=>({...p,[f.mid]:newQty}));addTrx(tab,detail,[]);showNotif(`✅ ${mat?.nama} ${tab==="inbound"?"+":"-"}${q} ${mat?.satuan}`);setF(x=>({...x,qty:"",ket:""}));}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
+  const save=async()=>{if(!f.qty||parseFloat(f.qty)<=0)return showNotif("Masukkan jumlah!","err");const q=parseFloat(f.qty);if(tab==="outbound"&&(stok[f.mid]||0)<q)return showNotif(`Stok tidak cukup! (${stok[f.mid]||0} ${mat?.satuan})`,"err");const newQty=(stok[f.mid]||0)+(tab==="inbound"?q:-q);const detail=`${mat?.nama} ${tab==="inbound"?"masuk":"keluar"}: ${q} ${mat?.satuan}${f.ket?" — "+f.ket:""}`;setSaving(true);try{await apPost({action:"updateStok",payload:{material_id:f.mid,qty:newQty}});await apPost({action:"saveTransaksi",payload:{id:genId(),type:tab,detail,tanggal:new Date().toISOString()}});setStok(p=>({...p,[f.mid]:newQty}));addTrx(tab,detail);showNotif(`✅ ${mat?.nama} ${tab==="inbound"?"+":"-"}${q} ${mat?.satuan}`);setF(x=>({...x,qty:"",ket:""}));}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
   return(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
     <Card>
       <div style={{display:"flex",gap:8,marginBottom:18}}>{[["inbound","📥 Inbound",C.ok],["outbound","📤 Outbound Manual",C.err]].map(([id,label,color])=>(<button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"10px 8px",borderRadius:8,border:`2px solid ${tab===id?color:"#ddd"}`,background:tab===id?color+"15":"#fff",color:tab===id?color:"#555",fontWeight:700,cursor:"pointer",fontSize:13}}>{label}</button>))}</div>
@@ -287,6 +447,7 @@ function InboundOutbound({mats,stok,setStok,addTrx,showNotif}){
   </div>);
 }
 
+// ─── RIWAYAT ─────────────────────────────────────────────
 function Riwayat({trxs}){
   const [pg,setPg]=useState(1);const [filter,setFilter]=useState("all");const PS=15;
   const list=filter==="all"?trxs:trxs.filter(t=>t.type===filter);const paged=list.slice((pg-1)*PS,pg*PS);
@@ -294,6 +455,7 @@ function Riwayat({trxs}){
   return(<Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{fontWeight:700,fontSize:14,color:C.pri}}>📜 Riwayat Transaksi</div><select value={filter} onChange={e=>{setFilter(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"8px 12px",fontSize:13}}><option value="all">Semua</option><option value="inbound">Inbound</option><option value="outbound">Outbound</option></select></div>{paged.length===0?<div style={{textAlign:"center",padding:40,color:"#ccc"}}>Belum ada transaksi</div>:<><Tbl><TH cols={["Waktu","Tipe","Keterangan"]}/><tbody>{paged.map(t=>(<tr key={t.id}><TD style={{whiteSpace:"nowrap",fontSize:12}}>{fmtDt(t.tanggal)}</TD><TD><Badge label={t.type} color={t.type==="inbound"?C.ok:C.warn}/></TD><TD>{t.detail}</TD></tr>))}</tbody></Tbl><Pagination page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/></> }</Card>);
 }
 
+// ─── REKAP BULANAN ───────────────────────────────────────
 function RekapBulanan({trxs,showNotif}){
   const now=new Date();const [month,setMonth]=useState(now.getMonth());const [year,setYear]=useState(now.getFullYear());const [saving,setSaving]=useState(false);
   const months=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
@@ -306,25 +468,57 @@ function RekapBulanan({trxs,showNotif}){
   </div>);
 }
 
+// ─── ARSIP KAIN ──────────────────────────────────────────
 function ArsipKain({kainList}){
   const [search,setSearch]=useState("");const [pg,setPg]=useState(1);const PS=10;
   const list=useMemo(()=>{let l=kainList.filter(k=>k.status==="arsip");if(search)l=l.filter(k=>k.kode.toLowerCase().includes(search.toLowerCase())||k.jenisNama.toLowerCase().includes(search.toLowerCase())||k.customer.toLowerCase().includes(search.toLowerCase()));return l;},[kainList,search]);
   const paged=list.slice((pg-1)*PS,pg*PS);
-  return(<Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{fontWeight:700,fontSize:14,color:C.pri}}>🗃️ Arsip Kain <span style={{fontSize:12,color:"#aaa",fontWeight:400}}>({list.length} item)</span></div><input placeholder="🔍 Cari..." value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:200}}/></div>{list.length===0?<div style={{textAlign:"center",padding:40,color:"#ccc"}}>Tidak ada kain di arsip</div>:<><Tbl><TH cols={["Kode Lengkap","Jenis Kain","Warna","Tipe","Total","Customer","Tgl Masuk"]}/><tbody>{paged.map(k=>(<tr key={k.id} style={{opacity:.7}}><TD><span style={{fontFamily:"monospace",fontSize:12,fontWeight:700}}>{k.kode}</span></TD><TD>{k.jenisNama}</TD><TD><Badge label={k.warna||"–"} color="#9e9e9e"/></TD><TD><Badge label={k.tipe} color="#bbb"/></TD><TD>{k.meter} m</TD><TD>{k.customer}</TD><TD style={{fontSize:12}}>{k.tanggal}</TD></tr>))}</tbody></Tbl><Pagination page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/></> }</Card>);
+  return(<Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{fontWeight:700,fontSize:14,color:C.pri}}>🗃️ Arsip Kain <span style={{fontSize:12,color:"#aaa",fontWeight:400}}>({list.length} item)</span></div><input placeholder="🔍 Cari..." value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:200}}/></div>{list.length===0?<div style={{textAlign:"center",padding:40,color:"#ccc"}}>Tidak ada kain di arsip</div>:<><Tbl><TH cols={["Kode Lengkap","Jenis Kain","Warna","Tipe","Total","Customer","Tgl Masuk"]}/><tbody>{paged.map(k=>(<tr key={k.id} style={{opacity:.7}}><TD><span style={{fontFamily:"monospace",fontSize:12,fontWeight:700}}>{k.kode}</span></TD><TD>{k.jenisNama}</TD><TD><Badge label={k.warna||"–"} color="#9e9e9e"/></TD><TD><Badge label={k.tipe} color="#bbb"/></TD><TD>{k.meter} m</TD><TD>{k.customer||"–"}</TD><TD style={{fontSize:12}}>{k.tanggal}</TD></tr>))}</tbody></Tbl><Pagination page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/></> }</Card>);
 }
 
-const ALL_MENU=[{id:"dashboard",icon:"🏠",label:"Dashboard"},{id:"master-material",icon:"📦",label:"Master Material"},{id:"master-harga",icon:"💰",label:"Master Harga"},{id:"stok-kain",icon:"🧵",label:"Stok Kain"},{id:"buat-paket",icon:"✏️",label:"Buat Paket"},{id:"daftar-paket",icon:"📋",label:"Daftar Paket"},{id:"menu-order",icon:"🔍",label:"Menu Order"},{id:"inbound",icon:"📥",label:"Inbound / Outbound"},{id:"riwayat",icon:"📜",label:"Riwayat"},{id:"rekap",icon:"📊",label:"Rekap Bulanan"},{id:"arsip-kain",icon:"🗃️",label:"Arsip Kain"}];
-const ADMIN_IDS=["dashboard","stok-kain","buat-paket","daftar-paket","menu-order","inbound","riwayat"];
+// ─── MENU CONFIG ─────────────────────────────────────────
+const ALL_MENU=[
+  {id:"dashboard",     icon:"🏠",label:"Dashboard"},
+  {id:"nilai-stok",    icon:"💰",label:"Nilai Stok"},
+  {id:"master-material",icon:"📦",label:"Master Material"},
+  {id:"master-harga",  icon:"🏷️",label:"Master Harga"},
+  {id:"stok-kain",     icon:"🧵",label:"Stok Kain"},
+  {id:"buat-paket",    icon:"✏️",label:"Buat Paket"},
+  {id:"daftar-paket",  icon:"📋",label:"Daftar Paket"},
+  {id:"menu-order",    icon:"🔍",label:"Menu Order"},
+  {id:"inbound",       icon:"📥",label:"Inbound / Outbound"},
+  {id:"riwayat",       icon:"📜",label:"Riwayat"},
+  {id:"rekap",         icon:"📊",label:"Rekap Bulanan"},
+  {id:"arsip-kain",    icon:"🗃️",label:"Arsip Kain"},
+];
+const ADMIN_IDS=["dashboard","nilai-stok","stok-kain","buat-paket","daftar-paket","menu-order","inbound","riwayat"];
 
+// ─── MAIN APP ────────────────────────────────────────────
 function App(){
-  const [role,setRole]=useState(null);const [page,setPage]=useState("dashboard");const [mats,setMats]=useState([]);const [harga,setHarga]=useState({});const [jenisKain,setJenisKain]=useState([]);const [stok,setStok]=useState({});const [kainList,setKainList]=useState([]);const [pkgs,setPkgs]=useState([]);const [trxs,setTrxs]=useState([]);const [sidebar,setSidebar]=useState(true);const [notif,setNotif]=useState(null);const [viewPaket,setViewPaket]=useState(null);const [loading,setLoading]=useState(false);const [loadError,setLoadError]=useState(null);
+  const [role,setRole]=useState(null);
+  const [page,setPage]=useState("dashboard");
+  const [mats,setMats]=useState([]);const [harga,setHarga]=useState({});const [jenisKain,setJenisKain]=useState([]);const [stok,setStok]=useState({});const [kainList,setKainList]=useState([]);const [pkgs,setPkgs]=useState([]);const [trxs,setTrxs]=useState([]);
+  const [sidebar,setSidebar]=useState(true);const [notif,setNotif]=useState(null);const [viewPaket,setViewPaket]=useState(null);const [loading,setLoading]=useState(false);const [loadError,setLoadError]=useState(null);
 
   const showNotif=useCallback((m,t="ok")=>{setNotif({m,t});setTimeout(()=>setNotif(null),3500);},[]);
   const addTrx=useCallback((type,detail)=>setTrxs(p=>[{id:genId(),type,detail,tanggal:new Date().toISOString()},...p]),[]);
 
   const loadAll=useCallback(async()=>{setLoading(true);setLoadError(null);try{const d=await apGet("getAll");const s=toState(d);setMats(s.mats);setHarga(s.harga);setStok(s.stok);setJenisKain(s.jenisKain);setKainList(s.kainList);setPkgs(s.pkgs);setTrxs(s.trxs);}catch(e){setLoadError(e.message);}setLoading(false);},[]);
 
+  // ← Restore session saat refresh
+  useEffect(()=>{
+    const savedRole=sessionStorage.getItem("tarda_role");
+    const savedApi=sessionStorage.getItem("tarda_api");
+    if(savedRole&&savedApi){API=savedApi;setRole(savedRole);}
+  },[]);
+
   useEffect(()=>{if(role)loadAll();},[role]);
+
+  const doLogout=()=>{
+    sessionStorage.removeItem("tarda_role");
+    sessionStorage.removeItem("tarda_api");
+    setRole(null);setMats([]);setHarga({});setStok({});setJenisKain([]);setKainList([]);setPkgs([]);setTrxs([]);
+  };
 
   if(!role)return <LoginPage onLogin={r=>{setRole(r);setPage("dashboard");}}/>;
   if(loading)return <LoadingScreen/>;
@@ -334,7 +528,21 @@ function App(){
   const cur=menuItems.find(m=>m.id===page)||menuItems[0];
   const p={mats,setMats,harga,setHarga,jenisKain,setJenisKain,stok,setStok,kainList,setKainList,pkgs,setPkgs,trxs,showNotif,addTrx,role,onViewPaket:setViewPaket};
 
-  const renderPage=()=>{switch(page){case "dashboard":return <Dashboard {...p}/>;case "master-material":return <MasterMaterial {...p}/>;case "master-harga":return <MasterHarga {...p}/>;case "stok-kain":return <StokKain {...p}/>;case "buat-paket":return <BuatPaket {...p}/>;case "daftar-paket":return <DaftarPaket pkgs={pkgs} setPkgs={setPkgs} onViewPaket={setViewPaket} showNotif={showNotif} role={role}/>;case "menu-order":return <MenuOrder {...p}/>;case "inbound":return <InboundOutbound {...p}/>;case "riwayat":return <Riwayat trxs={trxs}/>;case "rekap":return <RekapBulanan trxs={trxs} showNotif={showNotif}/>;case "arsip-kain":return <ArsipKain kainList={kainList}/>;default:return null;}};
+  const renderPage=()=>{switch(page){
+    case "dashboard":     return <Dashboard {...p}/>;
+    case "nilai-stok":    return <NilaiStok mats={mats} stok={stok} harga={harga} kainList={kainList} jenisKain={jenisKain}/>;
+    case "master-material":return <MasterMaterial {...p}/>;
+    case "master-harga":  return <MasterHarga {...p}/>;
+    case "stok-kain":     return <StokKain {...p}/>;
+    case "buat-paket":    return <BuatPaket {...p}/>;
+    case "daftar-paket":  return <DaftarPaket pkgs={pkgs} setPkgs={setPkgs} onViewPaket={setViewPaket} showNotif={showNotif} role={role}/>;
+    case "menu-order":    return <MenuOrder {...p}/>;
+    case "inbound":       return <InboundOutbound {...p}/>;
+    case "riwayat":       return <Riwayat trxs={trxs}/>;
+    case "rekap":         return <RekapBulanan trxs={trxs} showNotif={showNotif}/>;
+    case "arsip-kain":    return <ArsipKain kainList={kainList}/>;
+    default: return null;
+  }};
 
   return(<div style={{display:"flex",height:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif",background:C.bg,overflow:"hidden"}}>
     <div style={{width:sidebar?232:60,transition:"width .25s ease",background:`linear-gradient(180deg,${C.pri} 0%,${C.sec} 100%)`,display:"flex",flexDirection:"column",flexShrink:0,boxShadow:"2px 0 12px rgba(0,0,0,.15)",zIndex:10,overflow:"hidden"}}>
@@ -343,7 +551,7 @@ function App(){
         <button onClick={()=>setSidebar(!sidebar)} style={{background:"none",border:"none",color:"#fff",cursor:"pointer",fontSize:20,padding:4,flexShrink:0,marginLeft:sidebar?"0":"auto"}}>☰</button>
       </div>
       <div style={{flex:1,overflowY:"auto",overflowX:"hidden"}}>{menuItems.map(m=>(<button key={m.id} onClick={()=>setPage(m.id)} title={m.label} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",width:"100%",background:page===m.id?"rgba(255,255,255,.15)":"transparent",border:"none",borderLeft:`3px solid ${page===m.id?"#64b5f6":"transparent"}`,color:"#fff",cursor:"pointer",textAlign:"left",fontSize:13,whiteSpace:"nowrap",transition:"background .15s"}}><span style={{fontSize:17,flexShrink:0}}>{m.icon}</span>{sidebar&&<span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{m.label}</span>}</button>))}</div>
-      {sidebar&&<div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,.1)"}}><div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginBottom:6}}>{role==="owner"?"👑 Owner":"🏪 Admin Gudang"}</div><button onClick={()=>{setRole(null);setMats([]);setHarga({});setStok({});setJenisKain([]);setKainList([]);setPkgs([]);setTrxs([]);}} style={{fontSize:12,color:"rgba(255,255,255,.6)",background:"none",border:"1px solid rgba(255,255,255,.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer",width:"100%"}}>🚪 Logout</button></div>}
+      {sidebar&&<div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,.1)"}}><div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginBottom:6}}>{role==="owner"?"👑 Owner":"🏪 Admin Gudang"}</div><button onClick={doLogout} style={{fontSize:12,color:"rgba(255,255,255,.6)",background:"none",border:"1px solid rgba(255,255,255,.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer",width:"100%"}}>🚪 Logout</button></div>}
     </div>
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
       <div style={{background:"#fff",padding:"0 24px",height:56,display:"flex",alignItems:"center",justifyContent:"space-between",boxShadow:"0 1px 4px rgba(0,0,0,.08)",flexShrink:0}}>

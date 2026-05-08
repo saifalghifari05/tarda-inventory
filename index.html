@@ -29,12 +29,20 @@ const todayStr=()=>new Date().toISOString().split("T")[0];
 const toNum=v=>parseFloat(v)||0;
 const genKode=pkgs=>{const d=new Date(),dd=String(d.getDate()).padStart(2,"0"),mm=String(d.getMonth()+1).padStart(2,"0");return`PKT-${dd}${mm}${d.getFullYear()}-${String(pkgs.filter(p=>p.tanggal===todayStr()).length+1).padStart(3,"0")}`;};
 
-const VARIANT_CATS=["Kain","Resletting","Benang","Interlining","Kancing","Pin","Kabak"];
+const VARIANT_CATS=["Kain","Benang","Resletting","Interlining","Kancing","Pin","Kabak","Tarboosh","Plastik Zipper","Hardbox","Mika","Kardus"];
 const DEF_SATUAN={Kain:"meter",Benang:"cone",Interlining:"meter"};
 const getSatuan=k=>DEF_SATUAN[k]||"pcs";
+
+const VARIANT_GROUPS=[
+  {label:"🧵 Kain",       cats:["Kain"]},
+  {label:"🧶 Benang",     cats:["Benang"]},
+  {label:"🪡 Lining",     cats:["Interlining","Resletting"]},
+  {label:"📎 Aksesori",   cats:["Kancing","Pin","Kabak"]},
+  {label:"📦 Packaging",  cats:["Plastik Zipper","Hardbox","Mika","Kardus"]},
+];
 const C={pri:"#1a237e",sec:"#283593",acc:"#2196f3",ok:"#43a047",warn:"#fb8c00",err:"#e53935",bg:"#eef2f7"};
-const CAT_COLOR={"Kain":"#5c6bc0","Resletting":"#e53935","Benang":"#7b1fa2","Interlining":"#00897b","Kancing":"#f57f17","Pin":"#0277bd","Kabak":"#558b2f","Packaging":"#8d6e63","Aksesoris":"#f4511e"};
-const CAT_ICON={"Kain":"🧵","Resletting":"🔗","Benang":"🧶","Interlining":"🪡","Kancing":"⚪","Pin":"📌","Kabak":"🔘","Packaging":"📦","Aksesoris":"📎"};
+const CAT_COLOR={"Kain":"#5c6bc0","Resletting":"#e53935","Benang":"#7b1fa2","Interlining":"#00897b","Kancing":"#f57f17","Pin":"#0277bd","Kabak":"#558b2f","Tarboosh":"#795548","Plastik Zipper":"#6d4c41","Hardbox":"#455a64","Mika":"#00838f","Kardus":"#8d6e63","Packaging":"#8d6e63","Aksesori":"#f4511e"};
+const CAT_ICON={"Kain":"🧵","Resletting":"🔗","Benang":"🧶","Interlining":"🪡","Kancing":"⚪","Pin":"📌","Kabak":"🔘","Tarboosh":"🪢","Plastik Zipper":"🛍️","Hardbox":"📫","Mika":"🔲","Kardus":"📦","Packaging":"📦","Aksesori":"📎"};
 
 // ─── API ─────────────────────────────────────────────────
 const apGet=async a=>{const r=await fetch(`${API}?action=${a}`,{redirect:"follow"});const t=await r.text();let j;try{j=JSON.parse(t);}catch{throw new Error("Response bukan JSON: "+t.slice(0,80));}if(!j.success)throw new Error(j.error||"API error");return j.data;};
@@ -47,7 +55,7 @@ const toState=d=>{
   return{
     mats:d.materials||[],harga,stok,
     jenisKain:(d.jenis_kain||[]).map(j=>({id:j.id,nama:j.nama,kodePrefix:j.kode_prefix||j.kodePrefix||"",harga:toNum(j.harga),kategori:j.kategori||"Kain",satuan:j.satuan||"meter"})),
-    kainList:(d.stok_kain||[]).map(k=>({...k,jenisId:k.jenis_id||k.jenisId||"",jenisNama:k.jenis_nama||k.jenisNama||"",kodePrefix:k.kode_prefix||k.kodePrefix||"",meter:toNum(k.meter),sisa:toNum(k.sisa),kategori:k.kategori||"Kain"})),
+    kainList:(d.stok_varian||[]).map(k=>({...k,jenisId:k.jenis_id||k.jenisId||"",jenisNama:k.jenis_nama||k.jenisNama||"",kodePrefix:k.kode_prefix||k.kodePrefix||"",meter:toNum(k.meter),sisa:toNum(k.sisa),kategori:k.kategori||"Kain"})),
     pkgs:(d.pakets||[]).map(p=>({...p,hpp:toNum(p.hpp),items:items.filter(i=>String(i.paket_id)===String(p.id))})),
     trxs:[...(d.transaksi||[])].reverse()
   };
@@ -184,13 +192,40 @@ function NilaiStok({mats,stok,harga,kainList,jenisKain}){
   </div>);
 }
 
-// ─── MASTER MATERIAL ─────────────────────────────────────
-function MasterMaterial({mats,setMats,harga,showNotif,role}){
-  const canEdit=role==="owner";const [search,setSearch]=useState("");const [modal,setModal]=useState(false);const [edit,setEdit]=useState(null);const [f,setF]=useState({kode:"",nama:"",satuan:"",kategori:""});const [saving,setSaving]=useState(false);const [pg,setPg]=useState(1);const PS=10;
+// ─── MASTER MATERIAL — FIX: tambah field Harga di form ───
+// Perubahan:
+// 1. Props: tambah setHarga
+// 2. State f: tambah harga:""
+// 3. open(): populate harga dari data existing
+// 4. save(): juga simpan harga ke harga_material sheet
+// 5. Modal: tambah <Inp> untuk harga
+function MasterMaterial({mats,setMats,harga,setHarga,showNotif,role}){
+  const canEdit=role==="owner";const [search,setSearch]=useState("");const [modal,setModal]=useState(false);const [edit,setEdit]=useState(null);const [f,setF]=useState({kode:"",nama:"",satuan:"",kategori:"",harga:""});const [saving,setSaving]=useState(false);const [pg,setPg]=useState(1);const PS=10;
   const list=useMemo(()=>mats.filter(m=>m.nama.toLowerCase().includes(search.toLowerCase())||m.kode.toLowerCase().includes(search.toLowerCase())),[mats,search]);
   const paged=list.slice((pg-1)*PS,pg*PS);
-  const open=(m=null)=>{setEdit(m);setF(m?{kode:m.kode,nama:m.nama,satuan:m.satuan,kategori:m.kategori}:{kode:"",nama:"",satuan:"",kategori:""});setModal(true);};
-  const save=async()=>{if(!f.kode||!f.nama||!f.satuan)return showNotif("Lengkapi field wajib!","err");if(!edit&&mats.find(m=>m.kode===f.kode))return showNotif("Kode sudah ada!","err");const payload=edit?{...edit,...f}:{id:genId(),...f};setSaving(true);try{await apPost({action:"saveMaterial",payload});edit?setMats(p=>p.map(m=>m.id===edit.id?payload:m)):setMats(p=>[...p,payload]);showNotif(edit?"Diupdate!":"Ditambah!");setModal(false);}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
+  const open=(m=null)=>{setEdit(m);setF(m?{kode:m.kode,nama:m.nama,satuan:m.satuan,kategori:m.kategori,harga:harga[m.id]||""}:{kode:"",nama:"",satuan:"",kategori:"",harga:""});setModal(true);};
+  const save=async()=>{
+    if(!f.kode||!f.nama||!f.satuan)return showNotif("Lengkapi field wajib!","err");
+    if(!edit&&mats.find(m=>m.kode===f.kode))return showNotif("Kode sudah ada!","err");
+    // Pisahkan data material dan harga agar tidak ada kolom harga di sheet materials
+    const matPayload=edit
+      ?{...edit,kode:f.kode,nama:f.nama,satuan:f.satuan,kategori:f.kategori}
+      :{id:genId(),kode:f.kode,nama:f.nama,satuan:f.satuan,kategori:f.kategori};
+    setSaving(true);
+    try{
+      await apPost({action:"saveMaterial",payload:matPayload});
+      // Simpan harga secara terpisah ke sheet harga_material (jika diisi)
+      if(f.harga!==""){
+        const h=parseInt(f.harga)||0;
+        await apPost({action:"saveHarga",payload:{material_id:matPayload.id,harga:h}});
+        setHarga(p=>({...p,[matPayload.id]:h}));
+      }
+      edit?setMats(p=>p.map(m=>m.id===edit.id?matPayload:m)):setMats(p=>[...p,matPayload]);
+      showNotif(edit?"Diupdate!":"Ditambah!");
+      setModal(false);
+    }catch(e){showNotif("Gagal: "+e.message,"err");}
+    setSaving(false);
+  };
   const del=async m=>{if(!confirm(`Hapus ${m.nama}?`))return;try{await apPost({action:"deleteMaterial",id:m.id});setMats(p=>p.filter(x=>x.id!==m.id));showNotif("Dihapus!");}catch(e){showNotif("Gagal: "+e.message,"err");}};
   return(<div>
     {!canEdit&&<div style={{background:"#fff8e1",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#e65100"}}>⚠️ Mode baca saja</div>}
@@ -203,7 +238,15 @@ function MasterMaterial({mats,setMats,harga,showNotif,role}){
       <Tbl><TH cols={["Kode","Nama","Satuan","Kategori","Harga",canEdit?"Aksi":""]}/><tbody>{paged.map(m=>(<tr key={m.id}><TD><span style={{fontFamily:"monospace",fontSize:12}}>{m.kode}</span></TD><TD><b>{m.nama}</b></TD><TD>{m.satuan}</TD><TD><Badge label={m.kategori||"–"} color={C.acc}/></TD><TD>{harga[m.id]?<span style={{fontWeight:600,color:C.ok}}>{fmtRp(harga[m.id])}/{m.satuan}</span>:<span style={{color:"#bbb"}}>–</span>}</TD><TD>{canEdit&&<div style={{display:"flex",gap:6}}><Ghost onClick={()=>open(m)} style={{padding:"5px 10px",fontSize:12}}>✏️</Ghost><Ghost onClick={()=>del(m)} style={{padding:"5px 10px",fontSize:12,color:C.err}}>🗑️</Ghost></div>}</TD></tr>))}</tbody></Tbl>
       <Pg page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/>
     </Card>
-    {modal&&canEdit&&<Modal title={edit?"Edit Material":"Tambah Material"} onClose={()=>setModal(false)}><Inp label="Kode *" value={f.kode} onChange={v=>setF(x=>({...x,kode:v}))} placeholder="HDX-001"/><Inp label="Nama *" value={f.nama} onChange={v=>setF(x=>({...x,nama:v}))} placeholder="Hardbox"/><Inp label="Satuan *" value={f.satuan} onChange={v=>setF(x=>({...x,satuan:v}))} placeholder="pcs"/><Inp label="Kategori" value={f.kategori} onChange={v=>setF(x=>({...x,kategori:v}))} placeholder="Packaging"/><div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setModal(false)}>Batal</Ghost><Btn onClick={save} loading={saving}>Simpan</Btn></div></Modal>}
+    {modal&&canEdit&&<Modal title={edit?"Edit Material":"Tambah Material"} onClose={()=>setModal(false)}>
+      <Inp label="Kode *" value={f.kode} onChange={v=>setF(x=>({...x,kode:v}))} placeholder="HDX-001"/>
+      <Inp label="Nama *" value={f.nama} onChange={v=>setF(x=>({...x,nama:v}))} placeholder="Hardbox"/>
+      <Inp label="Satuan *" value={f.satuan} onChange={v=>setF(x=>({...x,satuan:v}))} placeholder="pcs"/>
+      <Inp label="Kategori" value={f.kategori} onChange={v=>setF(x=>({...x,kategori:v}))} placeholder="Packaging"/>
+      <Inp label={`Harga per ${f.satuan||"pcs"} (opsional)`} type="number" value={f.harga} onChange={v=>setF(x=>({...x,harga:v}))} placeholder="5000" note="Bisa diisi sekarang atau nanti lewat Master Harga → Material Sederhana"/>
+      {f.harga&&<div style={{background:"#e8f5e9",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.ok}}>💰 Harga: <b>{fmtRp(parseInt(f.harga)||0)}</b> / {f.satuan||"pcs"}</div>}
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setModal(false)}>Batal</Ghost><Btn onClick={save} loading={saving}>Simpan</Btn></div>
+    </Modal>}
   </div>);
 }
 
@@ -282,9 +325,9 @@ function StokVarian({kainList,setKainList,jenisKain,showNotif,addTrx}){
     const st={id,kode,jenisId:f.jenisId,jenisNama:jk.nama,kodePrefix:jk.kodePrefix||"",warna:f.warna.trim().toUpperCase(),tipe:isKain?f.tipe:"standard",meter:qty,sisa:qty,customer:isKain&&f.tipe==="potongan"?f.customer:"",tanggal:f.tanggal,status:"aktif",kategori:activeKat};
     const api={id,kode,jenis_id:f.jenisId,jenis_nama:jk.nama,kode_prefix:jk.kodePrefix||"",warna:st.warna,tipe:st.tipe,meter:qty,sisa:qty,customer:st.customer,tanggal:f.tanggal,status:"aktif",kategori:activeKat};
     const trx={id:genId(),type:"inbound",detail:`${activeKat} masuk: ${jk.nama} ${kode}${st.customer?" — "+st.customer:""}`,tanggal:new Date().toISOString()};
-    setSaving(true);try{await apPost({action:"saveStokKain",payload:api});await apPost({action:"saveTransaksi",payload:trx});setKainList(p=>[...p,st]);addTrx("inbound",trx.detail);showNotif(`${activeKat} ${kode} berhasil ditambah!`);setModal(false);}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);
+    try{await apPost({action:"saveStokVarian",payload:api});await apPost({action:"saveTransaksi",payload:trx});setKainList(p=>[...p,st]);addTrx("inbound",trx.detail);showNotif(`${activeKat} ${kode} berhasil ditambah!`);setModal(false);}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);
   };
-  const arsip=async k=>{if(!confirm(`Arsipkan ${k.kode}?`))return;try{await apPost({action:"updateStokKain",id:k.id,fields:{status:"arsip"}});setKainList(p=>p.map(x=>x.id===k.id?{...x,status:"arsip"}:x));showNotif("Diarsipkan!");}catch(e){showNotif("Gagal: "+e.message,"err");}};
+  const arsip=async k=>{if(!confirm(`Arsipkan ${k.kode}?`))return;try{await apPost({action:"updateStokVarian",id:k.id,kategori:k.kategori||"Kain",fields:{status:"arsip"}});setKainList(p=>p.map(x=>x.id===k.id?{...x,status:"arsip"}:x));showNotif("Diarsipkan!");}catch(e){showNotif("Gagal: "+e.message,"err");}};
   const satuanLabel=selJenis?.satuan||getSatuan(activeKat);
   return(<div>
     <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>

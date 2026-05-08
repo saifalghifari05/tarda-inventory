@@ -18,9 +18,8 @@ input,select,button,textarea{font-family:inherit}
 </head>
 <body><div id="root"></div>
 <script type="text/babel">
-const{useState,useMemo,useCallback,useEffect}=React;
+const{useState,useMemo,useCallback,useEffect,useRef}=React;
 
-// ─── CONFIG ──────────────────────────────────────────────
 let API="";
 const fmt=n=>new Intl.NumberFormat("id-ID").format(n);
 const fmtRp=n=>"Rp "+fmt(n);
@@ -29,27 +28,32 @@ const todayStr=()=>new Date().toISOString().split("T")[0];
 const toNum=v=>parseFloat(v)||0;
 const genKode=pkgs=>{const d=new Date(),dd=String(d.getDate()).padStart(2,"0"),mm=String(d.getMonth()+1).padStart(2,"0");return`PKT-${dd}${mm}${d.getFullYear()}-${String(pkgs.filter(p=>p.tanggal===todayStr()).length+1).padStart(3,"0")}`;};
 
+// Kategori & satuan default
+const DEF_SATUAN_OPTS=["pcs","lembar","meter","cone","roll","yard"];
+const DEF_KAT_NON_KAIN=["Kancing","Tarboosh","Kabak","Pin","Plastik Zipper","Hardbox","Mika","Kardus","Resletting","Interlining","Benang"];
+const DEF_KAT_ALL=["Kain",...DEF_KAT_NON_KAIN];
+
+// LocalStorage helpers untuk custom options
+const getCustomOpts=(key,def)=>{try{const v=localStorage.getItem(key);return v?JSON.parse(v):def;}catch{return def;}};
+const setCustomOpts=(key,val)=>{try{localStorage.setItem(key,JSON.stringify(val));}catch{}};
+
 const VARIANT_CATS=["Kain","Benang","Resletting","Interlining","Kancing","Pin","Kabak","Tarboosh","Plastik Zipper","Hardbox","Mika","Kardus"];
-const DEF_SATUAN={Kain:"meter",Benang:"cone",Interlining:"meter"};
-const getSatuan=k=>DEF_SATUAN[k]||"pcs";
+const DEF_SATUAN_MAP={Kain:"meter",Benang:"cone",Interlining:"meter"};
+const getSatuan=k=>DEF_SATUAN_MAP[k]||"pcs";
 
-const VARIANT_GROUPS=[
-  {label:"🧵 Kain",       cats:["Kain"]},
-  {label:"🧶 Benang",     cats:["Benang"]},
-  {label:"🪡 Lining",     cats:["Interlining","Resletting"]},
-  {label:"📎 Aksesori",   cats:["Kancing","Pin","Kabak"]},
-  {label:"📦 Packaging",  cats:["Plastik Zipper","Hardbox","Mika","Kardus"]},
-];
 const C={pri:"#1a237e",sec:"#283593",acc:"#2196f3",ok:"#43a047",warn:"#fb8c00",err:"#e53935",bg:"#eef2f7"};
-const CAT_COLOR={"Kain":"#5c6bc0","Resletting":"#e53935","Benang":"#7b1fa2","Interlining":"#00897b","Kancing":"#f57f17","Pin":"#0277bd","Kabak":"#558b2f","Tarboosh":"#795548","Plastik Zipper":"#6d4c41","Hardbox":"#455a64","Mika":"#00838f","Kardus":"#8d6e63","Packaging":"#8d6e63","Aksesori":"#f4511e"};
-const CAT_ICON={"Kain":"🧵","Resletting":"🔗","Benang":"🧶","Interlining":"🪡","Kancing":"⚪","Pin":"📌","Kabak":"🔘","Tarboosh":"🪢","Plastik Zipper":"🛍️","Hardbox":"📫","Mika":"🔲","Kardus":"📦","Packaging":"📦","Aksesori":"📎"};
+const CAT_COLOR={"Kain":"#5c6bc0","Resletting":"#e53935","Benang":"#7b1fa2","Interlining":"#00897b","Kancing":"#f57f17","Pin":"#0277bd","Kabak":"#558b2f","Tarboosh":"#795548","Plastik Zipper":"#6d4c41","Hardbox":"#455a64","Mika":"#00838f","Kardus":"#8d6e63"};
+const CAT_ICON={"Kain":"🧵","Resletting":"🔗","Benang":"🧶","Interlining":"🪡","Kancing":"⚪","Pin":"📌","Kabak":"🔘","Tarboosh":"🪢","Plastik Zipper":"🛍️","Hardbox":"📫","Mika":"🔲","Kardus":"📦"};
 
-// ─── API ─────────────────────────────────────────────────
 const apGet=async a=>{const r=await fetch(`${API}?action=${a}`,{redirect:"follow"});const t=await r.text();let j;try{j=JSON.parse(t);}catch{throw new Error("Response bukan JSON: "+t.slice(0,80));}if(!j.success)throw new Error(j.error||"API error");return j.data;};
 const apPost=async p=>{const r=await fetch(API,{method:"POST",redirect:"follow",headers:{"Content-Type":"text/plain;charset=utf-8"},body:JSON.stringify(p)});const t=await r.text();let j;try{j=JSON.parse(t);}catch{throw new Error("Response bukan JSON");}if(!j.success)throw new Error(j.error||"API error");return j.data;};
 
 const toState=d=>{
-  const harga={};(d.harga_material||[]).forEach(h=>{harga[h.material_id]=toNum(h.harga);});
+  // v3: harga langsung dari materials.harga
+  const harga={};
+  (d.materials||[]).forEach(m=>{ if(m.harga!==undefined&&m.harga!=="") harga[m.id]=toNum(m.harga); });
+  // backward compat: merge dari harga_material kalau masih ada
+  (d.harga_material||[]).forEach(h=>{ if(!harga[h.material_id]&&h.harga) harga[h.material_id]=toNum(h.harga); });
   const stok={};(d.stok_material||[]).forEach(s=>{stok[s.material_id]=toNum(s.qty);});
   const items=(d.paket_items||[]).map(i=>({...i,qty:toNum(i.qty),harga:toNum(i.harga)}));
   return{
@@ -73,12 +77,6 @@ const Inp=({label,value,onChange,type="text",placeholder,min,step,note})=>(
     {note&&<div style={{fontSize:11,color:"#aaa",marginTop:4}}>{note}</div>}
   </div>
 );
-const Sel=({label,value,onChange,options})=>(
-  <div style={{marginBottom:12}}>
-    {label&&<label style={{fontSize:12,color:"#555",marginBottom:4,display:"block",fontWeight:600}}>{label}</label>}
-    <select value={value} onChange={e=>onChange(e.target.value)} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%",boxSizing:"border-box"}}>{options.map(o=><option key={o.v} value={o.v}>{o.l}</option>)}</select>
-  </div>
-);
 const Badge=({label,color})=><span style={{background:color+"22",color,padding:"3px 10px",borderRadius:20,fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>{label}</span>;
 function Modal({title,onClose,children,w=520}){return(<div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.45)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}><div style={{background:"#fff",borderRadius:16,width:w,maxWidth:"100%",maxHeight:"90vh",overflowY:"auto"}}><div style={{padding:"16px 20px",borderBottom:"1px solid #eee",display:"flex",alignItems:"center",justifyContent:"space-between"}}><span style={{fontWeight:700,fontSize:16,color:C.pri}}>{title}</span><button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:"#aaa"}}>×</button></div><div style={{padding:20}}>{children}</div></div></div>);}
 const TH=({cols})=><thead><tr>{cols.map(c=><th key={c} style={{background:"#f5f7fa",padding:"10px 12px",textAlign:"left",fontSize:12,fontWeight:700,color:"#555",borderBottom:"2px solid #e8eaf0",whiteSpace:"nowrap"}}>{c}</th>)}</tr></thead>;
@@ -87,6 +85,52 @@ const Tbl=({children})=><div style={{overflowX:"auto"}}><table style={{width:"10
 function Pg({page,total,onChange}){if(total<=1)return null;return(<div style={{display:"flex",justifyContent:"center",gap:6,marginTop:16}}>{Array.from({length:total},(_,i)=>i+1).map(p=><button key={p} onClick={()=>onChange(p)} style={{padding:"6px 12px",borderRadius:6,border:"none",cursor:"pointer",background:p===page?C.pri:"#f0f0f0",color:p===page?"#fff":"#333",fontSize:13}}>{p}</button>)}</div>);}
 function SC({icon,label,value,color,sub}){return(<Card style={{display:"flex",alignItems:"center",gap:14}}><div style={{width:48,height:48,borderRadius:12,background:color+"22",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{icon}</div><div><div style={{fontSize:12,color:"#888",marginBottom:2}}>{label}</div><div style={{fontSize:18,fontWeight:700,color}}>{value}</div>{sub&&<div style={{fontSize:11,color:"#aaa"}}>{sub}</div>}</div></Card>);}
 function Barcode({kode}){const bars=[];let x=6;for(let ci=0;ci<kode.length;ci++){const c=kode.charCodeAt(ci);for(let b=0;b<7;b++){const bit=(c>>b)&1,w=bit?2.5:1.2;bars.push(<rect key={`${ci}-${b}`} x={x} y={4} width={w} height={44} fill="#111"/>);x+=w+1.2;}x+=3;}const W=Math.min(x+12,340);return(<div style={{textAlign:"center"}}><svg width={W} height={68} viewBox={`0 0 ${x+12} 68`} style={{maxWidth:"100%",border:"1px solid #eee",borderRadius:6,padding:4,background:"#fff"}}>{bars}<text x={(x+12)/2} y={62} textAnchor="middle" fontSize={9} fontFamily="monospace" fill="#333">{kode}</text></svg><div style={{marginTop:8,fontFamily:"monospace",fontSize:14,fontWeight:700,letterSpacing:2,color:"#333"}}>{kode}</div></div>);}
+
+// ─── CUSTOM DROPDOWN — dropdown dengan opsi bisa ditambah ─
+function CustomDropdown({label,value,onChange,storageKey,defaultOpts,canEdit,placeholder,required}){
+  const [opts,setOpts]=useState(()=>getCustomOpts(storageKey,defaultOpts));
+  const [addMode,setAddMode]=useState(false);
+  const [newVal,setNewVal]=useState("");
+  const allOpts=useMemo(()=>[...new Set([...defaultOpts,...opts])]  ,[defaultOpts,opts]);
+  const addOpt=()=>{
+    const v=newVal.trim();if(!v)return;
+    const updated=[...new Set([...opts,v])];
+    setOpts(updated);setCustomOpts(storageKey,updated);onChange(v);setNewVal("");setAddMode(false);
+  };
+  const delOpt=v=>{
+    if(defaultOpts.includes(v))return;
+    const updated=opts.filter(o=>o!==v);
+    setOpts(updated);setCustomOpts(storageKey,updated);
+    if(value===v)onChange(allOpts.filter(o=>o!==v)[0]||"");
+  };
+  return(
+    <div style={{marginBottom:12}}>
+      {label&&<label style={{fontSize:12,color:"#555",marginBottom:4,display:"block",fontWeight:600}}>{label}{required&&" *"}</label>}
+      <div style={{display:"flex",gap:6}}>
+        <select value={value} onChange={e=>onChange(e.target.value)} style={{flex:1,border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,boxSizing:"border-box"}}>
+          {placeholder&&<option value="">— {placeholder} —</option>}
+          {allOpts.map(o=><option key={o} value={o}>{o}</option>)}
+        </select>
+        {canEdit&&<button onClick={()=>setAddMode(!addMode)} title="Tambah pilihan baru" style={{background:addMode?C.pri:"#f0f0f0",color:addMode?"#fff":"#555",border:"none",borderRadius:8,padding:"0 12px",cursor:"pointer",fontSize:16,fontWeight:700,flexShrink:0}}>{addMode?"×":"+"}</button>}
+      </div>
+      {addMode&&canEdit&&(
+        <div style={{marginTop:6,display:"flex",gap:6,alignItems:"center"}}>
+          <input value={newVal} onChange={e=>setNewVal(e.target.value)} onKeyDown={e=>e.key==="Enter"&&addOpt()} placeholder="Ketik pilihan baru..." autoFocus style={{flex:1,border:"1px solid "+C.acc,borderRadius:8,padding:"8px 12px",fontSize:13}}/>
+          <Btn onClick={addOpt} bg={C.ok} style={{padding:"8px 14px",fontSize:12}}>✓ Tambah</Btn>
+        </div>
+      )}
+      {canEdit&&addMode&&opts.filter(o=>!defaultOpts.includes(o)).length>0&&(
+        <div style={{marginTop:6,display:"flex",flexWrap:"wrap",gap:4}}>
+          {opts.filter(o=>!defaultOpts.includes(o)).map(o=>(
+            <span key={o} style={{background:"#f0f4ff",borderRadius:20,padding:"3px 10px",fontSize:12,display:"flex",alignItems:"center",gap:4}}>
+              {o}<button onClick={()=>delOpt(o)} style={{background:"none",border:"none",cursor:"pointer",color:C.err,fontSize:14,padding:0,lineHeight:1}}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── LOADING ─────────────────────────────────────────────
 function LoadingScreen({error,onRetry}){return(
@@ -98,8 +142,8 @@ function LoadingScreen({error,onRetry}){return(
       <div style={{color:"rgba(255,255,255,.7)",fontSize:13}}>Memuat data dari Google Sheets...</div>
     </>:<>
       <div style={{background:"rgba(255,255,255,.15)",borderRadius:12,padding:"16px 24px",color:"#fff",fontSize:13,textAlign:"center",maxWidth:340}}>
-        <div style={{fontSize:20,marginBottom:8}}>❌</div><div style={{fontWeight:600,marginBottom:6}}>Gagal terhubung ke database</div>
-        <div style={{opacity:.8,fontSize:12}}>{error}</div>
+        <div style={{fontSize:20,marginBottom:8}}>❌</div><b>Gagal terhubung</b>
+        <div style={{opacity:.8,fontSize:12,marginTop:4}}>{error}</div>
       </div>
       <button onClick={onRetry} style={{background:"#fff",color:C.pri,border:"none",borderRadius:8,padding:"10px 24px",fontWeight:700,cursor:"pointer",fontSize:14}}>🔄 Coba Lagi</button>
     </>}
@@ -157,7 +201,7 @@ function Dashboard({mats,stok,harga,kainList,pkgs,jenisKain,onViewPaket}){
       <Card><div style={{fontSize:13,color:"#888",marginBottom:6}}>💰 Estimasi Nilai Stok</div><div style={{fontSize:24,fontWeight:700,color:C.ok}}>{fmtRp(totalNilai)}</div><div style={{fontSize:11,color:"#bbb",marginTop:4}}>detail di menu Nilai Stok</div></Card>
       <Card><div style={{fontSize:13,color:"#888",marginBottom:10}}>⚠️ Stok Menipis</div>{low.length===0?<div style={{color:C.ok,fontSize:13}}>✅ Semua aman</div>:low.map(m=>(<div key={m.id} style={{display:"flex",justifyContent:"space-between",padding:"5px 0",borderBottom:"1px solid #f5f5f5",fontSize:13}}><span>{m.nama}</span><Badge label={`${stok[m.id]||0} ${m.satuan}`} color={C.err}/></div>))}</Card>
     </div>
-    <Card><div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>📋 Paket Terbaru <span style={{fontWeight:400,fontSize:12,color:"#aaa"}}>(klik untuk detail)</span></div>
+    <Card><div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>📋 Paket Terbaru</div>
       {pkgs.length===0?<div style={{color:"#aaa",fontSize:13}}>Belum ada paket</div>:<Tbl><TH cols={["Kode","Nama Paket","Customer","HPP","Status"]}/><tbody>{pkgs.slice(0,5).map(p=>(<tr key={p.id} onClick={()=>onViewPaket(p)} style={{cursor:"pointer"}} onMouseEnter={e=>e.currentTarget.style.background="#f0f4ff"} onMouseLeave={e=>e.currentTarget.style.background=""}><TD><span style={{fontFamily:"monospace",fontSize:12}}>{p.kode}</span></TD><TD><b>{p.nama}</b></TD><TD style={{fontSize:12}}>{p.customer||"–"}</TD><TD><span style={{fontWeight:700,color:C.ok}}>{fmtRp(p.hpp)}</span></TD><TD><Badge label={p.status} color={p.status==="pending"?C.warn:C.ok}/></TD></tr>))}</tbody></Tbl>}
     </Card>
   </div>);
@@ -192,113 +236,208 @@ function NilaiStok({mats,stok,harga,kainList,jenisKain}){
   </div>);
 }
 
-// ─── MASTER MATERIAL — FIX: tambah field Harga di form ───
-// Perubahan:
-// 1. Props: tambah setHarga
-// 2. State f: tambah harga:""
-// 3. open(): populate harga dari data existing
-// 4. save(): juga simpan harga ke harga_material sheet
-// 5. Modal: tambah <Inp> untuk harga
-function MasterMaterial({mats,setMats,harga,setHarga,showNotif,role}){
-  const canEdit=role==="owner";const [search,setSearch]=useState("");const [modal,setModal]=useState(false);const [edit,setEdit]=useState(null);const [f,setF]=useState({kode:"",nama:"",satuan:"",kategori:"",harga:""});const [saving,setSaving]=useState(false);const [pg,setPg]=useState(1);const PS=10;
-  const list=useMemo(()=>mats.filter(m=>m.nama.toLowerCase().includes(search.toLowerCase())||m.kode.toLowerCase().includes(search.toLowerCase())),[mats,search]);
-  const paged=list.slice((pg-1)*PS,pg*PS);
-  const open=(m=null)=>{setEdit(m);setF(m?{kode:m.kode,nama:m.nama,satuan:m.satuan,kategori:m.kategori,harga:harga[m.id]||""}:{kode:"",nama:"",satuan:"",kategori:"",harga:""});setModal(true);};
-  const save=async()=>{
-    if(!f.kode||!f.nama||!f.satuan)return showNotif("Lengkapi field wajib!","err");
-    if(!edit&&mats.find(m=>m.kode===f.kode))return showNotif("Kode sudah ada!","err");
-    // Pisahkan data material dan harga agar tidak ada kolom harga di sheet materials
-    const matPayload=edit
-      ?{...edit,kode:f.kode,nama:f.nama,satuan:f.satuan,kategori:f.kategori}
-      :{id:genId(),kode:f.kode,nama:f.nama,satuan:f.satuan,kategori:f.kategori};
+// ─── MASTER HARGA (UNIFIED) ───────────────────────────────
+// Menggabungkan Material Sederhana + Jenis Varian dalam satu tampilan
+// Dua tombol tambah: [+ Tambah Kain] [+ Tambah Material Lain]
+// Data tetap tersimpan terpisah: materials sheet & jenis_kain sheet
+function MasterHarga({mats,setMats,harga,setHarga,jenisKain,setJenisKain,showNotif,role}){
+  const canEdit=role==="owner";
+  const [search,setSearch]=useState("");
+  const [katFilter,setKatFilter]=useState("Semua");
+  const [pg,setPg]=useState(1);const PS=12;
+  const [saving,setSaving]=useState(false);
+
+  // Modal Kain (jenis_kain sheet)
+  const [kainModal,setKainModal]=useState(false);
+  const [kainEdit,setKainEdit]=useState(null);
+  const [kF,setKF]=useState({nama:"",kodePrefix:"",harga:"",satuan:"meter"});
+
+  // Modal Material Lain (materials sheet ATAU jenis_kain sheet tergantung tipe)
+  const [matModal,setMatModal]=useState(false);
+  const [matEdit,setMatEdit]=useState(null);
+  // tipe: "item" = materials sheet (item spesifik), "varian" = jenis_kain sheet
+  const [mF,setMF]=useState({tipe:"item",kode:"",nama:"",kategori:"Kancing",satuan:"pcs",harga:"",kodePrefix:""});
+
+  // Unified list: semua jenis_kain + semua materials
+  const allItems=useMemo(()=>[
+    ...jenisKain.map(j=>({_id:j.id,_src:"varian",_kat:j.kategori||"Kain",nama:j.nama,kategori:j.kategori||"Kain",prefix:j.kodePrefix||"–",satuan:j.satuan,harga:j.harga,_raw:j})),
+    ...mats.map(m=>({_id:m.id,_src:"material",_kat:m.kategori||"Lainnya",nama:m.nama,kategori:m.kategori||"Lainnya",prefix:m.kode||"–",satuan:m.satuan,harga:harga[m.id]||0,_raw:m})),
+  ],[jenisKain,mats,harga]);
+
+  const allKats=useMemo(()=>["Semua",...new Set(allItems.map(i=>i._kat))]  ,[allItems]);
+  const filtered=useMemo(()=>{let l=allItems;if(katFilter!=="Semua")l=l.filter(i=>i._kat===katFilter);if(search)l=l.filter(i=>i.nama.toLowerCase().includes(search.toLowerCase())||i.prefix.toLowerCase().includes(search.toLowerCase()));return l;},[allItems,katFilter,search]);
+  const paged=filtered.slice((pg-1)*PS,pg*PS);
+
+  // ── Kain form ─────────────────────────────────────────
+  const openKain=(j=null)=>{setKainEdit(j);setKF(j?{nama:j.nama,kodePrefix:j.kodePrefix||"",harga:j.harga,satuan:j.satuan||"meter"}:{nama:"",kodePrefix:"",harga:"",satuan:"meter"});setKainModal(true);};
+  const saveKain=async()=>{
+    if(!kF.nama||!kF.harga||!kF.satuan)return showNotif("Lengkapi semua field!","err");
+    const np=kF.kodePrefix.trim().toUpperCase();
+    const id=kainEdit?kainEdit.id:genId();
+    const api={id,nama:kF.nama,kode_prefix:np,harga:parseInt(kF.harga),kategori:"Kain",satuan:kF.satuan};
+    const st={id,nama:kF.nama,kodePrefix:np,harga:parseInt(kF.harga),kategori:"Kain",satuan:kF.satuan};
+    setSaving(true);try{await apPost({action:"saveJenisKain",payload:api});kainEdit?setJenisKain(p=>p.map(j=>j.id===kainEdit.id?st:j)):setJenisKain(p=>[...p,st]);showNotif("Kain disimpan!");setKainModal(false);}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);
+  };
+  const delKain=async j=>{if(!confirm(`Hapus ${j.nama}?`))return;try{await apPost({action:"deleteJenisKain",id:j.id});setJenisKain(p=>p.filter(x=>x.id!==j.id));showNotif("Dihapus!");}catch(e){showNotif("Gagal: "+e.message,"err");}};
+
+  // ── Material Lain form ────────────────────────────────
+  const openMat=(item=null)=>{
+    setMatEdit(item);
+    if(item){
+      if(item._src==="varian"){
+        setMF({tipe:"varian",kode:"",nama:item.nama,kategori:item.kategori,satuan:item.satuan,harga:item.harga,kodePrefix:item.prefix==="–"?"":item.prefix});
+      } else {
+        setMF({tipe:"item",kode:item.prefix==="–"?"":item.prefix,nama:item.nama,kategori:item.kategori,satuan:item.satuan,harga:item.harga,kodePrefix:""});
+      }
+    } else {
+      setMF({tipe:"item",kode:"",nama:"",kategori:"Kancing",satuan:"pcs",harga:"",kodePrefix:""});
+    }
+    setMatModal(true);
+  };
+  const saveMat=async()=>{
+    if(!mF.nama||!mF.kategori||!mF.satuan||!mF.harga)return showNotif("Lengkapi semua field!","err");
     setSaving(true);
     try{
-      await apPost({action:"saveMaterial",payload:matPayload});
-      // Simpan harga secara terpisah ke sheet harga_material (jika diisi)
-      if(f.harga!==""){
-        const h=parseInt(f.harga)||0;
-        await apPost({action:"saveHarga",payload:{material_id:matPayload.id,harga:h}});
-        setHarga(p=>({...p,[matPayload.id]:h}));
+      if(mF.tipe==="item"){
+        // Simpan ke materials sheet
+        if(!mF.kode)return showNotif("Kode wajib untuk Item Spesifik!","err");
+        if(!matEdit&&mats.find(m=>m.kode===mF.kode))return showNotif("Kode sudah ada!","err");
+        const id=matEdit?matEdit._id:genId();
+        const h=parseInt(mF.harga)||0;
+        const payload={id,kode:mF.kode.toUpperCase(),nama:mF.nama,satuan:mF.satuan,kategori:mF.kategori,harga:h};
+        await apPost({action:"saveMaterial",payload});
+        matEdit?setMats(p=>p.map(m=>m.id===id?payload:m)):setMats(p=>[...p,payload]);
+        setHarga(p=>({...p,[id]:h}));
+      } else {
+        // Simpan ke jenis_kain sheet
+        const np=(mF.kodePrefix||"").trim().toUpperCase();
+        const id=matEdit?matEdit._id:genId();
+        const api={id,nama:mF.nama,kode_prefix:np,harga:parseInt(mF.harga),kategori:mF.kategori,satuan:mF.satuan};
+        const st={id,nama:mF.nama,kodePrefix:np,harga:parseInt(mF.harga),kategori:mF.kategori,satuan:mF.satuan};
+        await apPost({action:"saveJenisKain",payload:api});
+        matEdit?setJenisKain(p=>p.map(j=>j.id===id?st:j)):setJenisKain(p=>[...p,st]);
       }
-      edit?setMats(p=>p.map(m=>m.id===edit.id?matPayload:m)):setMats(p=>[...p,matPayload]);
-      showNotif(edit?"Diupdate!":"Ditambah!");
-      setModal(false);
+      showNotif("Disimpan!");setMatModal(false);
     }catch(e){showNotif("Gagal: "+e.message,"err");}
     setSaving(false);
   };
-  const del=async m=>{if(!confirm(`Hapus ${m.nama}?`))return;try{await apPost({action:"deleteMaterial",id:m.id});setMats(p=>p.filter(x=>x.id!==m.id));showNotif("Dihapus!");}catch(e){showNotif("Gagal: "+e.message,"err");}};
-  return(<div>
-    {!canEdit&&<div style={{background:"#fff8e1",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#e65100"}}>⚠️ Mode baca saja</div>}
-    <div style={{background:"#e8f5e9",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#2e7d32"}}>ℹ️ Master Material untuk item <b>sederhana</b>: Hardbox, Plastik Zipper, Kardus. Untuk item dengan varian (Resletting, Benang, dll) → gunakan menu <b>Master Harga → Jenis Varian</b>.</div>
-    <Card>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
-        <input placeholder="🔍 Cari material..." value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:240}}/>
-        {canEdit&&<Btn onClick={()=>open()}>+ Tambah Material</Btn>}
-      </div>
-      <Tbl><TH cols={["Kode","Nama","Satuan","Kategori","Harga",canEdit?"Aksi":""]}/><tbody>{paged.map(m=>(<tr key={m.id}><TD><span style={{fontFamily:"monospace",fontSize:12}}>{m.kode}</span></TD><TD><b>{m.nama}</b></TD><TD>{m.satuan}</TD><TD><Badge label={m.kategori||"–"} color={C.acc}/></TD><TD>{harga[m.id]?<span style={{fontWeight:600,color:C.ok}}>{fmtRp(harga[m.id])}/{m.satuan}</span>:<span style={{color:"#bbb"}}>–</span>}</TD><TD>{canEdit&&<div style={{display:"flex",gap:6}}><Ghost onClick={()=>open(m)} style={{padding:"5px 10px",fontSize:12}}>✏️</Ghost><Ghost onClick={()=>del(m)} style={{padding:"5px 10px",fontSize:12,color:C.err}}>🗑️</Ghost></div>}</TD></tr>))}</tbody></Tbl>
-      <Pg page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/>
-    </Card>
-    {modal&&canEdit&&<Modal title={edit?"Edit Material":"Tambah Material"} onClose={()=>setModal(false)}>
-      <Inp label="Kode *" value={f.kode} onChange={v=>setF(x=>({...x,kode:v}))} placeholder="HDX-001"/>
-      <Inp label="Nama *" value={f.nama} onChange={v=>setF(x=>({...x,nama:v}))} placeholder="Hardbox"/>
-      <Inp label="Satuan *" value={f.satuan} onChange={v=>setF(x=>({...x,satuan:v}))} placeholder="pcs"/>
-      <Inp label="Kategori" value={f.kategori} onChange={v=>setF(x=>({...x,kategori:v}))} placeholder="Packaging"/>
-      <Inp label={`Harga per ${f.satuan||"pcs"} (opsional)`} type="number" value={f.harga} onChange={v=>setF(x=>({...x,harga:v}))} placeholder="5000" note="Bisa diisi sekarang atau nanti lewat Master Harga → Material Sederhana"/>
-      {f.harga&&<div style={{background:"#e8f5e9",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.ok}}>💰 Harga: <b>{fmtRp(parseInt(f.harga)||0)}</b> / {f.satuan||"pcs"}</div>}
-      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setModal(false)}>Batal</Ghost><Btn onClick={save} loading={saving}>Simpan</Btn></div>
-    </Modal>}
-  </div>);
-}
-
-// ─── MASTER HARGA ────────────────────────────────────────
-function MasterHarga({mats,harga,setHarga,jenisKain,setJenisKain,showNotif,role}){
-  const canEdit=role==="owner";const [tab,setTab]=useState("mat");const [editId,setEditId]=useState(null);const [editVal,setEditVal]=useState("");const [jkModal,setJkModal]=useState(false);const [jkEdit,setJkEdit]=useState(null);const [jkF,setJkF]=useState({nama:"",kodePrefix:"",harga:"",kategori:"Kain",satuan:"meter"});const [search,setSearch]=useState("");const [katFilter,setKatFilter]=useState("Semua");const [saving,setSaving]=useState(false);
-  const saveH=async id=>{setSaving(true);try{await apPost({action:"saveHarga",payload:{material_id:id,harga:parseInt(editVal)||0}});setHarga(p=>({...p,[id]:parseInt(editVal)||0}));setEditId(null);showNotif("Harga disimpan!");}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
-  const saveJk=async()=>{
-    if(!jkF.nama||!jkF.harga||!jkF.satuan)return showNotif("Lengkapi semua field!","err");
-    const np=jkF.kodePrefix.trim().toUpperCase();
-    const id=jkEdit?jkEdit.id:genId();
-    const api={id,nama:jkF.nama,kode_prefix:np,harga:parseInt(jkF.harga),kategori:jkF.kategori,satuan:jkF.satuan};
-    const st={id,nama:jkF.nama,kodePrefix:np,harga:parseInt(jkF.harga),kategori:jkF.kategori,satuan:jkF.satuan};
-    setSaving(true);try{await apPost({action:"saveJenisKain",payload:api});jkEdit?setJenisKain(p=>p.map(j=>j.id===jkEdit.id?st:j)):setJenisKain(p=>[...p,st]);showNotif("Disimpan!");setJkModal(false);}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);
+  const delMat=async item=>{
+    if(!confirm(`Hapus ${item.nama}?`))return;
+    try{
+      if(item._src==="material"){await apPost({action:"deleteMaterial",id:item._id});setMats(p=>p.filter(x=>x.id!==item._id));}
+      else{await apPost({action:"deleteJenisKain",id:item._id});setJenisKain(p=>p.filter(x=>x.id!==item._id));}
+      showNotif("Dihapus!");
+    }catch(e){showNotif("Gagal: "+e.message,"err");}
   };
-  const delJk=async j=>{if(!confirm(`Hapus ${j.nama}?`))return;try{await apPost({action:"deleteJenisKain",id:j.id});setJenisKain(p=>p.filter(x=>x.id!==j.id));showNotif("Dihapus!");}catch(e){showNotif("Gagal: "+e.message,"err");}};
-  const filteredJk=useMemo(()=>{let l=jenisKain;if(katFilter!=="Semua")l=l.filter(j=>j.kategori===katFilter);if(search)l=l.filter(j=>j.nama.toLowerCase().includes(search.toLowerCase()));return l;},[jenisKain,katFilter,search]);
-  const Tab=({id,label})=><button onClick={()=>setTab(id)} style={{padding:"8px 20px",borderRadius:8,border:"none",cursor:"pointer",background:tab===id?C.pri:"#f0f0f0",color:tab===id?"#fff":"#333",fontWeight:600,fontSize:13}}>{label}</button>;
+
+  const katNonKain=useMemo(()=>getCustomOpts("tarda_kategori_opts",DEF_KAT_NON_KAIN),[]);
+  const satuanOpts=useMemo(()=>getCustomOpts("tarda_satuan_opts",DEF_SATUAN_OPTS),[]);
+
   return(<div>
     {!canEdit&&<div style={{background:"#fff8e1",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#e65100"}}>⚠️ Mode baca saja</div>}
-    <div style={{display:"flex",gap:8,marginBottom:14}}><Tab id="mat" label="📦 Material Sederhana"/><Tab id="varian" label="🧵 Jenis Varian"/></div>
-    {tab==="mat"&&<Card>
-      <div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:4}}>Harga Material Sederhana</div>
-      <div style={{fontSize:12,color:"#aaa",marginBottom:12}}>Hardbox, Plastik Zipper, Kardus, dll.</div>
-      <Tbl><TH cols={["Kode","Nama","Satuan","Harga",canEdit?"Aksi":""]}/><tbody>{mats.map(m=>(<tr key={m.id}><TD><span style={{fontFamily:"monospace",fontSize:12}}>{m.kode}</span></TD><TD><b>{m.nama}</b></TD><TD>{m.satuan}</TD><TD>{editId===m.id?<input type="number" value={editVal} onChange={e=>setEditVal(e.target.value)} style={{border:"1px solid #ddd",borderRadius:6,padding:"6px 10px",fontSize:13,width:130}}/>:<span style={{fontWeight:600,color:harga[m.id]?C.ok:"#aaa"}}>{harga[m.id]?fmtRp(harga[m.id]):"Belum diisi"}</span>}</TD><TD>{canEdit&&(editId===m.id?<div style={{display:"flex",gap:6}}><Btn onClick={()=>saveH(m.id)} loading={saving} style={{padding:"5px 12px",fontSize:12}}>✅</Btn><Ghost onClick={()=>setEditId(null)} style={{padding:"5px 10px",fontSize:12}}>Batal</Ghost></div>:<Ghost onClick={()=>{setEditId(m.id);setEditVal(harga[m.id]||"");}} style={{padding:"5px 10px",fontSize:12}}>✏️</Ghost>)}</TD></tr>))}</tbody></Tbl>
-    </Card>}
-    {tab==="varian"&&<Card>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
-        <div><div style={{fontWeight:700,fontSize:14,color:C.pri}}>Jenis Varian & Harga</div><div style={{fontSize:12,color:"#aaa",marginTop:2}}>Kain, Resletting, Benang, Interlining, Kancing, Pin, Kabak</div></div>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          <select value={katFilter} onChange={e=>setKatFilter(e.target.value)} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13}}>
-            <option value="Semua">Semua Kategori</option>{VARIANT_CATS.map(c=><option key={c} value={c}>{c}</option>)}
-          </select>
-          <input placeholder="🔍 Cari..." value={search} onChange={e=>setSearch(e.target.value)} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:150}}/>
-          {canEdit&&<Btn onClick={()=>{setJkEdit(null);setJkF({nama:"",kodePrefix:"",harga:"",kategori:"Kain",satuan:"meter"});setJkModal(true);}}>+ Tambah</Btn>}
+
+    {/* Toolbar */}
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:10}}>
+      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
+        <input placeholder="🔍 Cari nama / kode..." value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:220}}/>
+        <select value={katFilter} onChange={e=>{setKatFilter(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13}}>
+          {allKats.map(k=><option key={k} value={k}>{k}</option>)}
+        </select>
+      </div>
+      {canEdit&&<div style={{display:"flex",gap:8}}>
+        <Btn onClick={()=>openKain()} bg="#5c6bc0">🧵 + Tambah Kain</Btn>
+        <Btn onClick={()=>openMat()} bg={C.warn}>📦 + Tambah Material Lain</Btn>
+      </div>}
+    </div>
+
+    {/* Info */}
+    <div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#3949ab"}}>
+      💡 <b>Kain</b> → disimpan di sheet <code>jenis_kain</code> &nbsp;|&nbsp; <b>Item Spesifik</b> → disimpan di sheet <code>materials</code> &nbsp;|&nbsp; <b>Jenis Varian</b> (non-kain) → disimpan di sheet <code>jenis_kain</code>
+    </div>
+
+    {/* Tabel unified */}
+    <Card>
+      <Tbl>
+        <TH cols={["Nama","Kategori","Tipe","Prefix/Kode","Satuan","Harga",canEdit?"Aksi":""]}/>
+        <tbody>
+          {paged.length===0&&<tr><td colSpan={7} style={{textAlign:"center",padding:40,color:"#ccc",fontSize:13}}>Tidak ada item</td></tr>}
+          {paged.map(item=>(
+            <tr key={item._id}>
+              <TD><b>{item.nama}</b></TD>
+              <TD><Badge label={item.kategori} color={CAT_COLOR[item.kategori]||C.acc}/></TD>
+              <TD>
+                {item._src==="varian"
+                  ?<span style={{background:"#e8eaf6",color:C.pri,padding:"3px 8px",borderRadius:6,fontSize:11,fontWeight:700}}>Varian</span>
+                  :<span style={{background:"#e8f5e9",color:C.ok,padding:"3px 8px",borderRadius:6,fontSize:11,fontWeight:700}}>Item</span>}
+              </TD>
+              <TD>
+                {item.prefix!=="–"
+                  ?<span style={{fontFamily:"monospace",background:"#f5f5f5",padding:"3px 8px",borderRadius:6,fontSize:12,fontWeight:700}}>{item.prefix}</span>
+                  :<span style={{color:"#ccc"}}>–</span>}
+              </TD>
+              <TD>{item.satuan}</TD>
+              <TD><span style={{fontWeight:700,color:C.ok}}>{fmtRp(item.harga)}/{item.satuan}</span></TD>
+              <TD>{canEdit&&<div style={{display:"flex",gap:6}}>
+                <Ghost onClick={()=>item._kat==="Kain"?openKain(item._raw):openMat(item)} style={{padding:"5px 10px",fontSize:12}}>✏️</Ghost>
+                <Ghost onClick={()=>item._kat==="Kain"?delKain(item._raw):delMat(item)} style={{padding:"5px 10px",fontSize:12,color:C.err}}>🗑️</Ghost>
+              </div>}</TD>
+            </tr>
+          ))}
+        </tbody>
+      </Tbl>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:10,fontSize:12,color:"#aaa"}}>
+        <span>{filtered.length} item total</span>
+        <Pg page={pg} total={Math.ceil(filtered.length/PS)} onChange={setPg}/>
+      </div>
+    </Card>
+
+    {/* Modal Tambah/Edit Kain */}
+    {kainModal&&canEdit&&<Modal title={kainEdit?"Edit Jenis Kain":"Tambah Jenis Kain"} onClose={()=>setKainModal(false)} w={460}>
+      <div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:C.pri}}>Data disimpan ke sheet <b>jenis_kain</b></div>
+      <Inp label="Nama Kain *" value={kF.nama} onChange={v=>setKF(x=>({...x,nama:v}))} placeholder="Suprima / Vitale Barberis"/>
+      <Inp label="Kode Prefix (opsional)" value={kF.kodePrefix} onChange={v=>setKF(x=>({...x,kodePrefix:v.toUpperCase()}))} placeholder="HB017" note="Dikosongkan jika tidak pakai prefix. Otomatis kapital."/>
+      {kF.kodePrefix&&<div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.pri}}>Contoh: <b style={{fontFamily:"monospace"}}>{kF.kodePrefix}-024</b></div>}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <Inp label="Harga per meter *" type="number" value={kF.harga} onChange={v=>setKF(x=>({...x,harga:v}))} placeholder="100000"/>
+        <Inp label="Satuan *" value={kF.satuan} onChange={v=>setKF(x=>({...x,satuan:v}))} placeholder="meter"/>
+      </div>
+      {kF.harga&&<div style={{background:"#e8f5e9",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.ok}}>💰 {fmtRp(parseInt(kF.harga)||0)} / {kF.satuan||"meter"}</div>}
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setKainModal(false)}>Batal</Ghost><Btn onClick={saveKain} loading={saving}>Simpan</Btn></div>
+    </Modal>}
+
+    {/* Modal Tambah/Edit Material Lain */}
+    {matModal&&canEdit&&<Modal title={matEdit?"Edit Material":"Tambah Material Lain"} onClose={()=>setMatModal(false)} w={500}>
+      {/* Tipe toggle */}
+      <div style={{marginBottom:16}}>
+        <label style={{fontSize:12,color:"#555",marginBottom:6,display:"block",fontWeight:600}}>Tipe *</label>
+        <div style={{display:"flex",gap:8}}>
+          {[{v:"item",icon:"📦",l:"Item Spesifik",desc:"Misal: Kancing Cina Bulat Gold"},{v:"varian",icon:"🔗",l:"Jenis Varian",desc:"Misal: Resletting YKK 50cm"}].map(t=>(
+            <button key={t.v} onClick={()=>setMF(x=>({...x,tipe:t.v}))} style={{flex:1,padding:"10px 8px",borderRadius:10,border:`2px solid ${mF.tipe===t.v?C.pri:"#ddd"}`,background:mF.tipe===t.v?C.pri+"15":"#fff",cursor:"pointer",textAlign:"left"}}>
+              <div style={{fontWeight:700,fontSize:13,color:mF.tipe===t.v?C.pri:"#333"}}>{t.icon} {t.l}</div>
+              <div style={{fontSize:11,color:"#aaa",marginTop:2}}>{t.desc}</div>
+            </button>
+          ))}
+        </div>
+        <div style={{fontSize:11,color:"#888",marginTop:8,padding:"8px 12px",background:"#f9f9f9",borderRadius:6}}>
+          {mF.tipe==="item"?"📋 Disimpan ke sheet: <b>materials</b> (stok diatur via Inbound/Outbound)":"📋 Disimpan ke sheet: <b>jenis_kain</b> (stok diatur via menu Stok Varian)"}
         </div>
       </div>
-      <div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:12,color:"#3949ab"}}>💡 Prefix + Kode Varian = Kode Lengkap &nbsp;|&nbsp; <b>HB017</b>+<b>024</b>=<b>HB017-024</b> &nbsp;|&nbsp; <b>YKK50</b>+<b>HTM-PJG</b>=<b>YKK50-HTM-PJG</b></div>
-      <Tbl><TH cols={["Nama Jenis","Kategori","Prefix","Satuan","Harga",canEdit?"Aksi":""]}/><tbody>
-        {filteredJk.map(j=>(<tr key={j.id}><TD><b>{j.nama}</b></TD><TD><Badge label={j.kategori||"Kain"} color={CAT_COLOR[j.kategori]||C.acc}/></TD><TD>{j.kodePrefix?<span style={{fontFamily:"monospace",background:"#e8eaf6",color:C.pri,padding:"3px 8px",borderRadius:6,fontSize:12,fontWeight:700}}>{j.kodePrefix}</span>:<span style={{color:"#ccc"}}>–</span>}</TD><TD>{j.satuan}</TD><TD><span style={{fontWeight:700,color:C.ok}}>{fmtRp(j.harga)}/{j.satuan}</span></TD><TD>{canEdit&&<div style={{display:"flex",gap:6}}><Ghost onClick={()=>{setJkEdit(j);setJkF({nama:j.nama,kodePrefix:j.kodePrefix||"",harga:j.harga,kategori:j.kategori||"Kain",satuan:j.satuan||"meter"});setJkModal(true);}} style={{padding:"5px 10px",fontSize:12}}>✏️</Ghost><Ghost onClick={()=>delJk(j)} style={{padding:"5px 10px",fontSize:12,color:C.err}}>🗑️</Ghost></div>}</TD></tr>))}
-      </tbody></Tbl>
-    </Card>}
-    {jkModal&&canEdit&&<Modal title={jkEdit?"Edit Jenis Varian":"Tambah Jenis Varian"} onClose={()=>setJkModal(false)} w={460}>
-      <Sel label="Kategori *" value={jkF.kategori} onChange={v=>setJkF(x=>({...x,kategori:v,satuan:getSatuan(v)}))} options={VARIANT_CATS.map(c=>({v:c,l:c}))}/>
-      <Inp label="Nama Jenis *" value={jkF.nama} onChange={v=>setJkF(x=>({...x,nama:v}))} placeholder={jkF.kategori==="Kain"?"Suprima":"Resletting YKK 50cm"}/>
-      <Inp label="Kode Prefix (opsional)" value={jkF.kodePrefix} onChange={v=>setJkF(x=>({...x,kodePrefix:v.toUpperCase()}))} placeholder={jkF.kategori==="Kain"?"HB017":"YKK50"} note="Dikosongkan jika tidak pakai prefix. Otomatis kapital."/>
-      {jkF.kodePrefix&&<div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.pri}}>Contoh: <b style={{fontFamily:"monospace"}}>{jkF.kodePrefix}-{jkF.kategori==="Kain"?"024":"HTM-PJG"}</b></div>}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-        <Inp label={`Harga per ${jkF.satuan||"pcs"} *`} type="number" value={jkF.harga} onChange={v=>setJkF(x=>({...x,harga:v}))} placeholder="8000"/>
-        <Inp label="Satuan *" value={jkF.satuan} onChange={v=>setJkF(x=>({...x,satuan:v}))} placeholder="pcs/meter/cone"/>
-      </div>
-      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setJkModal(false)}>Batal</Ghost><Btn onClick={saveJk} loading={saving}>Simpan</Btn></div>
+
+      <Inp label="Nama *" value={mF.nama} onChange={v=>setMF(x=>({...x,nama:v}))} placeholder={mF.tipe==="item"?"Cina Bulat Gold":"Resletting YKK 50cm"}/>
+
+      <CustomDropdown label="Kategori" value={mF.kategori} onChange={v=>setMF(x=>({...x,kategori:v}))} storageKey="tarda_kategori_opts" defaultOpts={DEF_KAT_NON_KAIN} canEdit={canEdit} required/>
+
+      <CustomDropdown label="Satuan" value={mF.satuan} onChange={v=>setMF(x=>({...x,satuan:v}))} storageKey="tarda_satuan_opts" defaultOpts={DEF_SATUAN_OPTS} canEdit={canEdit} required/>
+
+      {mF.tipe==="item"
+        ?<Inp label="Kode *" value={mF.kode} onChange={v=>setMF(x=>({...x,kode:v.toUpperCase()}))} placeholder="CBG" note="Kode unik untuk item ini. Otomatis kapital."/>
+        :<Inp label="Kode Prefix (opsional)" value={mF.kodePrefix} onChange={v=>setMF(x=>({...x,kodePrefix:v.toUpperCase()}))} placeholder="YKK50" note="Prefix untuk kode varian. Opsional. Otomatis kapital."/>
+      }
+
+      <Inp label={`Harga per ${mF.satuan||"pcs"} *`} type="number" value={mF.harga} onChange={v=>setMF(x=>({...x,harga:v}))} placeholder="1500"/>
+      {mF.harga&&<div style={{background:"#e8f5e9",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.ok}}>💰 {fmtRp(parseInt(mF.harga)||0)} / {mF.satuan||"pcs"}</div>}
+
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setMatModal(false)}>Batal</Ghost><Btn onClick={saveMat} loading={saving}>Simpan</Btn></div>
     </Modal>}
   </div>);
 }
@@ -339,7 +478,7 @@ function StokVarian({kainList,setKainList,jenisKain,showNotif,addTrx}){
         <Btn onClick={openModal} bg={CAT_COLOR[activeKat]||C.pri}>+ Tambah {activeKat}</Btn>
       </div>
       {jenisForKat.length===0
-        ?<div style={{textAlign:"center",padding:30,color:"#aaa",fontSize:13}}>Belum ada jenis <b>{activeKat}</b>.<br/>Tambah dulu di <b>Master Harga → Jenis Varian</b>.</div>
+        ?<div style={{textAlign:"center",padding:30,color:"#aaa",fontSize:13}}>Belum ada jenis <b>{activeKat}</b>.<br/>Tambah dulu di <b>Master Harga → Tambah Material Lain</b>.</div>
         :<>
           <Tbl><TH cols={["Kode","Jenis","Warna",...(isKain?["Tipe"]:[]),"Qty","Sisa",...(isKain?["Customer"]:[]),"Tgl","Aksi"]}/><tbody>
             {paged.map(k=>{const jk=jenisKain.find(j=>j.id===k.jenisId);const sat=jk?.satuan||getSatuan(activeKat);return(<tr key={k.id}>
@@ -355,25 +494,22 @@ function StokVarian({kainList,setKainList,jenisKain,showNotif,addTrx}){
             </tr>);})}
           </tbody></Tbl>
           <Pg page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/>
-        </>
-      }
+        </>}
     </Card>
     {modal&&<Modal title={`Tambah Stok ${activeKat}`} onClose={()=>setModal(false)}>
       {jenisForKat.length===0
         ?<div style={{textAlign:"center",padding:20,color:"#aaa"}}>Tambah jenis {activeKat} dulu di Master Harga.</div>
         :<>
-          <Sel label={`Jenis ${activeKat} *`} value={f.jenisId} onChange={v=>setF(x=>({...x,jenisId:v}))} options={jenisForKat.map(j=>({v:j.id,l:`${j.nama} — ${fmtRp(j.harga)}/${j.satuan||"pcs"}`}))}/>
+          <div style={{marginBottom:12}}><label style={{fontSize:12,color:"#555",marginBottom:4,display:"block",fontWeight:600}}>Jenis {activeKat} *</label><select value={f.jenisId} onChange={e=>setF(x=>({...x,jenisId:e.target.value}))} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%",boxSizing:"border-box"}}>{jenisForKat.map(j=><option key={j.id} value={j.id}>{j.nama} — {fmtRp(j.harga)}/{j.satuan||"pcs"}</option>)}</select></div>
           <Inp label="Kode Varian *" value={f.warna} onChange={v=>setF(x=>({...x,warna:v.toUpperCase()}))} placeholder={isKain?"024 / NAVY":"HTM-PJG"} note="Otomatis huruf kapital"/>
           <div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}><div style={{fontSize:12,color:"#555"}}>Kode lengkap:</div><div style={{fontFamily:"monospace",fontSize:16,fontWeight:700,color:C.pri}}>{kodePreview}</div></div>
           {isKain&&<div style={{marginBottom:12}}><label style={{fontSize:12,color:"#555",marginBottom:6,display:"block",fontWeight:600}}>Tipe *</label><div style={{display:"flex",gap:8}}>{["roll","potongan"].map(t=>(<button key={t} onClick={()=>setF(x=>({...x,tipe:t,customer:""}))} style={{flex:1,padding:10,borderRadius:8,border:`2px solid ${f.tipe===t?C.pri:"#ddd"}`,background:f.tipe===t?C.pri+"15":"#fff",color:f.tipe===t?C.pri:"#333",fontWeight:600,cursor:"pointer",fontSize:13}}>{t==="roll"?"🎞️ Roll":"✂️ Potongan"}</button>))}</div></div>}
           <Inp label={`Jumlah (${satuanLabel}) *`} type="number" value={f.qty} onChange={v=>setF(x=>({...x,qty:v}))} placeholder={isKain?"25":"100"} min="0.1" step={isKain?"0.1":"1"}/>
           {isKain&&f.tipe==="potongan"&&<Inp label="Nama Customer *" value={f.customer} onChange={v=>setF(x=>({...x,customer:v}))} placeholder="Ibu Sari"/>}
-          {isKain&&f.tipe==="roll"&&<div style={{background:"#e8f5e9",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:12,color:C.ok}}>ℹ️ Kain roll tidak memerlukan nama customer</div>}
           <Inp label="Tanggal Masuk" type="date" value={f.tanggal} onChange={v=>setF(x=>({...x,tanggal:v}))}/>
           {selJenis&&<div style={{background:"#f9fbe7",borderRadius:8,padding:"10px 14px",marginBottom:12,fontSize:13}}>💰 {fmtRp(selJenis.harga)}/{selJenis.satuan||"pcs"}{f.qty&&<span style={{color:"#888"}}> — Total: <b>{fmtRp(selJenis.harga*parseFloat(f.qty||0))}</b></span>}</div>}
           <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}><Ghost onClick={()=>setModal(false)}>Batal</Ghost><Btn onClick={save} loading={saving}>Simpan</Btn></div>
-        </>
-      }
+        </>}
     </Modal>}
   </div>);
 }
@@ -449,11 +585,11 @@ function MenuOrder({pkgs,setPkgs,stok,setStok,kainList,setKainList,addTrx,showNo
 function InboundOutbound({mats,stok,setStok,addTrx,showNotif}){
   const [tab,setTab]=useState("inbound");const [f,setF]=useState({mid:mats[0]?.id||"",qty:"",tanggal:todayStr(),ket:""});const [saving,setSaving]=useState(false);
   const mat=mats.find(m=>m.id===f.mid);
-  const save=async()=>{if(!f.qty||parseFloat(f.qty)<=0)return showNotif("Masukkan jumlah!","err");const q=parseFloat(f.qty);if(tab==="outbound"&&(stok[f.mid]||0)<q)return showNotif(`Stok tidak cukup!`,"err");const nq=(stok[f.mid]||0)+(tab==="inbound"?q:-q);const detail=`${mat?.nama} ${tab==="inbound"?"masuk":"keluar"}: ${q} ${mat?.satuan}${f.ket?" — "+f.ket:""}`;setSaving(true);try{await apPost({action:"updateStok",payload:{material_id:f.mid,qty:nq}});await apPost({action:"saveTransaksi",payload:{id:genId(),type:tab,detail,tanggal:new Date().toISOString()}});setStok(p=>({...p,[f.mid]:nq}));addTrx(tab,detail);showNotif(`✅ ${mat?.nama} ${tab==="inbound"?"+":"-"}${q} ${mat?.satuan}`);setF(x=>({...x,qty:"",ket:""}));}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
+  const save=async()=>{if(!f.qty||parseFloat(f.qty)<=0)return showNotif("Masukkan jumlah!","err");const q=parseFloat(f.qty);if(tab==="outbound"&&(stok[f.mid]||0)<q)return showNotif("Stok tidak cukup!","err");const nq=(stok[f.mid]||0)+(tab==="inbound"?q:-q);const detail=`${mat?.nama} ${tab==="inbound"?"masuk":"keluar"}: ${q} ${mat?.satuan}${f.ket?" — "+f.ket:""}`;setSaving(true);try{await apPost({action:"updateStok",payload:{material_id:f.mid,qty:nq}});await apPost({action:"saveTransaksi",payload:{id:genId(),type:tab,detail,tanggal:new Date().toISOString()}});setStok(p=>({...p,[f.mid]:nq}));addTrx(tab,detail);showNotif(`✅ ${mat?.nama} ${tab==="inbound"?"+":"-"}${q} ${mat?.satuan}`);setF(x=>({...x,qty:"",ket:""}));}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
   return(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
     <Card>
       <div style={{display:"flex",gap:8,marginBottom:18}}>{[["inbound","📥 Inbound",C.ok],["outbound","📤 Outbound",C.err]].map(([id,label,color])=>(<button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"10px 8px",borderRadius:8,border:`2px solid ${tab===id?color:"#ddd"}`,background:tab===id?color+"15":"#fff",color:tab===id?color:"#555",fontWeight:700,cursor:"pointer",fontSize:13}}>{label}</button>))}</div>
-      <div style={{background:"#f5f5f5",borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:"#555"}}>ℹ️ Untuk material sederhana (Hardbox, Kardus, dll). Untuk varian → gunakan Stok Varian.</div>
+      <div style={{background:"#f5f5f5",borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:"#555"}}>ℹ️ Untuk Item Spesifik (Hardbox, Kardus, Kancing tertentu, dll). Untuk varian → gunakan Stok Varian.</div>
       <div style={{marginBottom:12}}><label style={{fontSize:12,color:"#555",marginBottom:4,display:"block",fontWeight:600}}>Material *</label><select value={f.mid} onChange={e=>setF(x=>({...x,mid:e.target.value}))} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%",boxSizing:"border-box"}}>{mats.map(m=><option key={m.id} value={m.id}>{m.nama} ({m.kode})</option>)}</select></div>
       {tab==="outbound"&&mat&&<div style={{background:"#f9f9f9",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:13}}>Stok: <b style={{color:(stok[f.mid]||0)<10?C.err:C.ok}}>{stok[f.mid]||0} {mat.satuan}</b></div>}
       <Inp label="Jumlah *" type="number" value={f.qty} onChange={v=>setF(x=>({...x,qty:v}))} placeholder="100" min="0"/>
@@ -461,7 +597,7 @@ function InboundOutbound({mats,stok,setStok,addTrx,showNotif}){
       <Inp label="Keterangan" value={f.ket} onChange={v=>setF(x=>({...x,ket:v}))} placeholder={tab==="inbound"?"Dari Supplier X":"Koreksi/rusak"}/>
       <Btn onClick={save} loading={saving} bg={tab==="inbound"?C.ok:C.err} style={{width:"100%"}}>{tab==="inbound"?"✅ Simpan Inbound":"✅ Simpan Outbound"}</Btn>
     </Card>
-    <Card><div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>📊 Stok Material Sederhana</div>{mats.map(m=>(<div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 8px",borderBottom:"1px solid #f5f5f5",borderRadius:6,background:f.mid===m.id?"#f0f4ff":"transparent"}}><div><div style={{fontWeight:600,fontSize:13}}>{m.nama}</div><div style={{fontSize:11,color:"#bbb"}}>{m.kode}</div></div><div style={{textAlign:"right"}}><span style={{fontWeight:700,fontSize:15,color:(stok[m.id]||0)<10?C.err:C.ok}}>{stok[m.id]||0}</span><span style={{fontSize:12,color:"#aaa",marginLeft:4}}>{m.satuan}</span></div></div>))}</Card>
+    <Card><div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>📊 Stok Item Spesifik</div>{mats.length===0?<div style={{color:"#aaa",fontSize:13}}>Belum ada item. Tambah di Master Harga.</div>:mats.map(m=>(<div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 8px",borderBottom:"1px solid #f5f5f5",borderRadius:6,background:f.mid===m.id?"#f0f4ff":"transparent"}}><div><div style={{fontWeight:600,fontSize:13}}>{m.nama}</div><div style={{fontSize:11,color:"#bbb"}}>{m.kode}</div></div><div style={{textAlign:"right"}}><span style={{fontWeight:700,fontSize:15,color:(stok[m.id]||0)<10?C.err:C.ok}}>{stok[m.id]||0}</span><span style={{fontSize:12,color:"#aaa",marginLeft:4}}>{m.satuan}</span></div></div>))}</Card>
   </div>);
 }
 
@@ -510,20 +646,19 @@ function ArsipVarian({kainList}){
   </Card>);
 }
 
-// ─── MENU CONFIG ─────────────────────────────────────────
+// ─── MENU CONFIG — Master Material dihapus ───────────────
 const ALL_MENU=[
-  {id:"dashboard",      icon:"🏠",label:"Dashboard"},
-  {id:"nilai-stok",     icon:"💰",label:"Nilai Stok"},
-  {id:"master-material",icon:"📦",label:"Master Material"},
-  {id:"master-harga",   icon:"🏷️",label:"Master Harga"},
-  {id:"stok-varian",    icon:"🧵",label:"Stok Varian"},
-  {id:"buat-paket",     icon:"✏️",label:"Buat Paket"},
-  {id:"daftar-paket",   icon:"📋",label:"Daftar Paket"},
-  {id:"menu-order",     icon:"🔍",label:"Menu Order"},
-  {id:"inbound",        icon:"📥",label:"Inbound / Outbound"},
-  {id:"riwayat",        icon:"📜",label:"Riwayat"},
-  {id:"rekap",          icon:"📊",label:"Rekap Bulanan"},
-  {id:"arsip-varian",   icon:"🗃️",label:"Arsip Varian"},
+  {id:"dashboard",    icon:"🏠",label:"Dashboard"},
+  {id:"nilai-stok",   icon:"💰",label:"Nilai Stok"},
+  {id:"master-harga", icon:"🏷️",label:"Master Harga"},
+  {id:"stok-varian",  icon:"🧵",label:"Stok Varian"},
+  {id:"buat-paket",   icon:"✏️",label:"Buat Paket"},
+  {id:"daftar-paket", icon:"📋",label:"Daftar Paket"},
+  {id:"menu-order",   icon:"🔍",label:"Menu Order"},
+  {id:"inbound",      icon:"📥",label:"Inbound / Outbound"},
+  {id:"riwayat",      icon:"📜",label:"Riwayat"},
+  {id:"rekap",        icon:"📊",label:"Rekap Bulanan"},
+  {id:"arsip-varian", icon:"🗃️",label:"Arsip Varian"},
 ];
 const ADMIN_IDS=["dashboard","nilai-stok","stok-varian","buat-paket","daftar-paket","menu-order","inbound","riwayat"];
 
@@ -533,39 +668,29 @@ function App(){
   const showNotif=useCallback((m,t="ok")=>{setNotif({m,t});setTimeout(()=>setNotif(null),3500);},[]);
   const addTrx=useCallback((type,detail)=>setTrxs(p=>[{id:genId(),type,detail,tanggal:new Date().toISOString()},...p]),[]);
   const loadAll=useCallback(async()=>{setLoading(true);setLoadError(null);try{const d=await apGet("getAll");const s=toState(d);setMats(s.mats);setHarga(s.harga);setStok(s.stok);setJenisKain(s.jenisKain);setKainList(s.kainList);setPkgs(s.pkgs);setTrxs(s.trxs);}catch(e){setLoadError(e.message);}setLoading(false);},[]);
-
-  useEffect(()=>{
-    const sr=sessionStorage.getItem("tarda_role"),sa=sessionStorage.getItem("tarda_api");
-    if(sr&&sa){API=sa;setRole(sr);}
-  },[]);
+  useEffect(()=>{const sr=sessionStorage.getItem("tarda_role"),sa=sessionStorage.getItem("tarda_api");if(sr&&sa){API=sa;setRole(sr);}},[]);
   useEffect(()=>{if(role)loadAll();},[role]);
-
   const doLogout=()=>{sessionStorage.removeItem("tarda_role");sessionStorage.removeItem("tarda_api");setRole(null);setMats([]);setHarga({});setStok({});setJenisKain([]);setKainList([]);setPkgs([]);setTrxs([]);};
-
   if(!role)return <LoginPage onLogin={r=>{setRole(r);setPage("dashboard");}}/>;
   if(loading)return <LoadingScreen/>;
   if(loadError)return <LoadingScreen error={loadError} onRetry={loadAll}/>;
-
   const menuItems=role==="owner"?ALL_MENU:ALL_MENU.filter(m=>ADMIN_IDS.includes(m.id));
   const cur=menuItems.find(m=>m.id===page)||menuItems[0];
   const p={mats,setMats,harga,setHarga,jenisKain,setJenisKain,stok,setStok,kainList,setKainList,pkgs,setPkgs,trxs,showNotif,addTrx,role,onViewPaket:setViewPaket};
-
   const renderPage=()=>{switch(page){
-    case "dashboard":      return <Dashboard {...p}/>;
-    case "nilai-stok":     return <NilaiStok mats={mats} stok={stok} harga={harga} kainList={kainList} jenisKain={jenisKain}/>;
-    case "master-material":return <MasterMaterial {...p}/>;
-    case "master-harga":   return <MasterHarga {...p}/>;
-    case "stok-varian":    return <StokVarian {...p}/>;
-    case "buat-paket":     return <BuatPaket {...p}/>;
-    case "daftar-paket":   return <DaftarPaket pkgs={pkgs} setPkgs={setPkgs} onViewPaket={setViewPaket} showNotif={showNotif} role={role}/>;
-    case "menu-order":     return <MenuOrder {...p}/>;
-    case "inbound":        return <InboundOutbound {...p}/>;
-    case "riwayat":        return <Riwayat trxs={trxs}/>;
-    case "rekap":          return <RekapBulanan trxs={trxs} showNotif={showNotif}/>;
-    case "arsip-varian":   return <ArsipVarian kainList={kainList}/>;
+    case "dashboard":    return <Dashboard {...p}/>;
+    case "nilai-stok":   return <NilaiStok mats={mats} stok={stok} harga={harga} kainList={kainList} jenisKain={jenisKain}/>;
+    case "master-harga": return <MasterHarga {...p}/>;
+    case "stok-varian":  return <StokVarian {...p}/>;
+    case "buat-paket":   return <BuatPaket {...p}/>;
+    case "daftar-paket": return <DaftarPaket pkgs={pkgs} setPkgs={setPkgs} onViewPaket={setViewPaket} showNotif={showNotif} role={role}/>;
+    case "menu-order":   return <MenuOrder {...p}/>;
+    case "inbound":      return <InboundOutbound {...p}/>;
+    case "riwayat":      return <Riwayat trxs={trxs}/>;
+    case "rekap":        return <RekapBulanan trxs={trxs} showNotif={showNotif}/>;
+    case "arsip-varian": return <ArsipVarian kainList={kainList}/>;
     default: return null;
   }};
-
   return(<div style={{display:"flex",height:"100vh",fontFamily:"'Segoe UI',system-ui,sans-serif",background:C.bg,overflow:"hidden"}}>
     <div style={{width:sidebar?232:60,transition:"width .25s ease",background:`linear-gradient(180deg,${C.pri} 0%,${C.sec} 100%)`,display:"flex",flexDirection:"column",flexShrink:0,boxShadow:"2px 0 12px rgba(0,0,0,.15)",zIndex:10,overflow:"hidden"}}>
       <div style={{padding:"14px 12px",display:"flex",alignItems:"center",borderBottom:"1px solid rgba(255,255,255,.1)",minHeight:58,gap:8}}>

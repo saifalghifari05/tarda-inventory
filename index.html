@@ -874,11 +874,13 @@ function DaftarPaket({ pkgs, setPkgs, onView, showNotif, role }) {
 }
 
 // ─── MENU ORDER ──────────────────────────────────────────
-function MenuOrder({ pkgs, setPkgs, stok, setStok, stokVarian, setStokVarian, addTrx, showNotif }) {
+function MenuOrder({ pkgs, setPkgs, stok, setStok, stokVarian, setStokVarian, addTrx, showNotif, onReload, apiUrl }) {
   const [input, setInput] = useState("");
   const [found, setFound] = useState(null);
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [debugInfo, setDebugInfo] = useState(null);
+  const [debugLoading, setDebugLoading] = useState(false);
 
   const doSearch = () => {
     const p = pkgs.find(x => x.kode === input.trim());
@@ -887,39 +889,45 @@ function MenuOrder({ pkgs, setPkgs, stok, setStok, stokVarian, setStokVarian, ad
 
   const process = async () => {
     setSaving(true);
+    setDebugInfo(null);
     try {
       const res = await apPost({ action:"processOrder", paketId:found.id, items:found.items });
-      // Log dari GAS
+      console.log("processOrder result:", res);
+
       if (res && res.log) {
-        console.log("processOrder log:", res.log);
         const failed = res.log.filter(l => l.includes("NOT FOUND") || l.includes("SKIP"));
         if (failed.length > 0) {
-          setTimeout(() => showNotif("⚠️ " + failed[0], "err"), 2000);
+          // Stok tidak ditemukan - tampilkan debug info
+          setDebugInfo({ log: res.log, failed });
+          showNotif("⚠️ Ada stok yang tidak ditemukan! Lihat info debug di bawah.", "err");
+          // Tetap update status paket
+          setPkgs(p => p.map(x => x.id===found.id ? {...x,status:"selesai"} : x));
+          setSaving(false);
+          return;
         }
       }
 
       const detail = `Order keluar: ${found.nama} (${found.kode})`;
       await apPost({ action:"saveTransaksi", payload:{ id:genId(), type:"outbound", detail, tanggal:new Date().toISOString() } });
 
-      // Update stok material (frontend)
-      const ns = { ...stok };
-      found.items.filter(i=>i.type==="material").forEach(i => { ns[i.ref_id||i.refId] = (ns[i.ref_id||i.refId]||0) - i.qty; });
-      setStok(ns);
-
-      // Update stok varian (frontend)
-      setStokVarian(p => p.map(k => {
-        const ki = found.items.find(i => (i.type==="varian"||i.type==="kain") && String(i.ref_id||i.refId)===String(k.id));
-        if (!ki) return k;
-        const newSisa = Math.max(0, +(k.sisa - ki.qty).toFixed(3));
-        return { ...k, sisa:newSisa, status:newSisa<=0?"arsip":k.status };
-      }));
-
-      setPkgs(p => p.map(x => x.id===found.id ? {...x,status:"selesai"} : x));
       addTrx("outbound", detail);
-      showNotif(`✅ Order ${found.kode} berhasil diproses!`);
+      showNotif(`✅ Order ${found.kode} berhasil! Memuat ulang data...`);
       setFound(null); setInput("");
+      // Reload data dari GAS untuk pastikan UI sinkron dengan sheet
+      if (onReload) await onReload();
     } catch(e) { showNotif("Gagal: "+e.message,"err"); }
     setSaving(false);
+  };
+
+  const runDebug = async () => {
+    if (!found) return;
+    setDebugLoading(true);
+    try {
+      const r = await fetch(`${apiUrl}?action=debugPaket&paketId=${found.id}`, { redirect:"follow" });
+      const t = await r.text(); const j = JSON.parse(t);
+      setDebugInfo(j.data || j);
+    } catch(e) { showNotif("Debug gagal: "+e.message,"err"); }
+    setDebugLoading(false);
   };
 
   return (
@@ -957,6 +965,30 @@ function MenuOrder({ pkgs, setPkgs, stok, setStok, stokVarian, setStokVarian, ad
           ? <div style={{marginTop:10,padding:12,background:"#e8f5e9",borderRadius:8,color:C.ok,textAlign:"center",fontSize:13}}>✅ Paket ini sudah diproses</div>
           : <Btn onClick={process} loading={saving} bg={C.ok} style={{width:"100%",marginTop:14,padding:"13px",fontSize:15}}>✅ Konfirmasi & Keluarkan Stok</Btn>
         }
+        <Ghost onClick={runDebug} style={{width:"100%",marginTop:8,fontSize:12,color:"#888"}}>{debugLoading?"🔍 Memeriksa...":"🔍 Debug: Cek Stok Matching"}</Ghost>
+      </Card>}
+      {debugInfo && <Card style={{marginTop:14,border:"2px solid "+C.warn}}>
+        <div style={{fontWeight:700,fontSize:13,color:C.warn,marginBottom:10}}>🔍 Debug Info</div>
+        {debugInfo.log && <div style={{marginBottom:10}}>
+          {debugInfo.log.map((l,i)=><div key={i} style={{fontSize:12,padding:"4px 8px",marginBottom:4,borderRadius:6,background:l.includes("OK")?"#e8f5e9":l.includes("NOT FOUND")||l.includes("SKIP")?"#fff3f3":"#f5f5f5",color:l.includes("OK")?C.ok:l.includes("NOT FOUND")||l.includes("SKIP")?C.err:"#555"}}>{l}</div>)}
+        </div>}
+        {debugInfo.detail_matching && <>
+          <div style={{fontWeight:600,fontSize:12,marginBottom:6}}>Item dalam paket vs Stok Varian:</div>
+          {debugInfo.detail_matching.map((m,i)=>(
+            <div key={i} style={{padding:"8px 12px",marginBottom:6,borderRadius:8,background:m.found_in_stok?"#e8f5e9":"#fff3f3",border:"1px solid "+(m.found_in_stok?C.ok:C.err)}}>
+              <div style={{fontWeight:600,fontSize:13}}>{m.nama} <span style={{fontSize:11,color:"#888"}}>({m.type})</span></div>
+              <div style={{fontSize:11,marginTop:4}}>ref_id: <code style={{background:"#f0f0f0",padding:"2px 6px",borderRadius:4}}>{m.ref_id||"—"}</code></div>
+              {m.found_in_stok
+                ?<div style={{fontSize:11,color:C.ok,marginTop:2}}>✅ Ditemukan: {m.stok_kode} (sisa: {m.stok_sisa})</div>
+                :<div style={{fontSize:11,color:C.err,marginTop:2}}>❌ {m.ref_id?"ID tidak ada di sheet stok_varian":"ref_id kosong!"}</div>
+              }
+            </div>
+          ))}
+          {debugInfo.semua_id_di_stok_varian && <div style={{marginTop:10,padding:"8px 12px",background:"#f5f5f5",borderRadius:8,fontSize:11}}>
+            <b>ID yang ada di stok_varian ({debugInfo.total_baris_stok_varian} baris):</b><br/>
+            {debugInfo.semua_id_di_stok_varian.join(", ")||"(kosong)"}
+          </div>}
+        </>}
       </Card>}
     </div>
   );
@@ -1270,7 +1302,7 @@ function App() {
     case "stok-varian":  return <StokVarian stokVarian={stokVarian} setStokVarian={setStokVarian} jenis={jenis} showNotif={showNotif} addTrx={addTrx}/>;
     case "buat-paket":   return <BuatPaket mats={mats} stokVarian={stokVarian} stok={stok} harga={harga} jenis={jenis} pkgs={pkgs} setPkgs={setPkgs} showNotif={showNotif}/>;
     case "daftar-paket": return <DaftarPaket pkgs={pkgs} setPkgs={setPkgs} onView={setViewPaket} showNotif={showNotif} role={role}/>;
-    case "menu-order":   return <MenuOrder pkgs={pkgs} setPkgs={setPkgs} stok={stok} setStok={setStok} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif}/>;
+    case "menu-order":   return <MenuOrder pkgs={pkgs} setPkgs={setPkgs} stok={stok} setStok={setStok} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif} onReload={loadAll} apiUrl={API}/>;
     case "inbound":      return <InboundOutbound mats={mats} stok={stok} setStok={setStok} stokVarian={stokVarian} setStokVarian={setStokVarian} jenis={jenis} addTrx={addTrx} showNotif={showNotif}/>;
     case "riwayat":      return <Riwayat trxs={trxs}/>;
     case "rekap":        return <RekapBulanan trxs={trxs} showNotif={showNotif}/>;

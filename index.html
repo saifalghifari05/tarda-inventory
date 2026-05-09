@@ -582,22 +582,160 @@ function MenuOrder({pkgs,setPkgs,stok,setStok,kainList,setKainList,addTrx,showNo
 }
 
 // ─── INBOUND / OUTBOUND ──────────────────────────────────
-function InboundOutbound({mats,stok,setStok,addTrx,showNotif}){
-  const [tab,setTab]=useState("inbound");const [f,setF]=useState({mid:mats[0]?.id||"",qty:"",tanggal:todayStr(),ket:""});const [saving,setSaving]=useState(false);
+// Mode: "material" = Item Spesifik, "varian" = Kain / Varian
+function InboundOutbound({mats,stok,setStok,kainList,setKainList,jenisKain,addTrx,showNotif}){
+  const [mode,setMode]=useState("material");
+  const [tab,setTab]=useState("inbound");
+  const [saving,setSaving]=useState(false);
+
+  // ── Mode Material ──────────────────────────────────────
+  const [f,setF]=useState({mid:mats[0]?.id||"",qty:"",tanggal:todayStr(),ket:""});
   const mat=mats.find(m=>m.id===f.mid);
-  const save=async()=>{if(!f.qty||parseFloat(f.qty)<=0)return showNotif("Masukkan jumlah!","err");const q=parseFloat(f.qty);if(tab==="outbound"&&(stok[f.mid]||0)<q)return showNotif("Stok tidak cukup!","err");const nq=(stok[f.mid]||0)+(tab==="inbound"?q:-q);const detail=`${mat?.nama} ${tab==="inbound"?"masuk":"keluar"}: ${q} ${mat?.satuan}${f.ket?" — "+f.ket:""}`;setSaving(true);try{await apPost({action:"updateStok",payload:{material_id:f.mid,qty:nq}});await apPost({action:"saveTransaksi",payload:{id:genId(),type:tab,detail,tanggal:new Date().toISOString()}});setStok(p=>({...p,[f.mid]:nq}));addTrx(tab,detail);showNotif(`✅ ${mat?.nama} ${tab==="inbound"?"+":"-"}${q} ${mat?.satuan}`);setF(x=>({...x,qty:"",ket:""}));}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
-  return(<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-    <Card>
-      <div style={{display:"flex",gap:8,marginBottom:18}}>{[["inbound","📥 Inbound",C.ok],["outbound","📤 Outbound",C.err]].map(([id,label,color])=>(<button key={id} onClick={()=>setTab(id)} style={{flex:1,padding:"10px 8px",borderRadius:8,border:`2px solid ${tab===id?color:"#ddd"}`,background:tab===id?color+"15":"#fff",color:tab===id?color:"#555",fontWeight:700,cursor:"pointer",fontSize:13}}>{label}</button>))}</div>
-      <div style={{background:"#f5f5f5",borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:"#555"}}>ℹ️ Untuk Item Spesifik (Hardbox, Kardus, Kancing tertentu, dll). Untuk varian → gunakan Stok Varian.</div>
-      <div style={{marginBottom:12}}><label style={{fontSize:12,color:"#555",marginBottom:4,display:"block",fontWeight:600}}>Material *</label><select value={f.mid} onChange={e=>setF(x=>({...x,mid:e.target.value}))} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%",boxSizing:"border-box"}}>{mats.map(m=><option key={m.id} value={m.id}>{m.nama} ({m.kode})</option>)}</select></div>
-      {tab==="outbound"&&mat&&<div style={{background:"#f9f9f9",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:13}}>Stok: <b style={{color:(stok[f.mid]||0)<10?C.err:C.ok}}>{stok[f.mid]||0} {mat.satuan}</b></div>}
-      <Inp label="Jumlah *" type="number" value={f.qty} onChange={v=>setF(x=>({...x,qty:v}))} placeholder="100" min="0"/>
-      <Inp label="Tanggal" type="date" value={f.tanggal} onChange={v=>setF(x=>({...x,tanggal:v}))}/>
-      <Inp label="Keterangan" value={f.ket} onChange={v=>setF(x=>({...x,ket:v}))} placeholder={tab==="inbound"?"Dari Supplier X":"Koreksi/rusak"}/>
-      <Btn onClick={save} loading={saving} bg={tab==="inbound"?C.ok:C.err} style={{width:"100%"}}>{tab==="inbound"?"✅ Simpan Inbound":"✅ Simpan Outbound"}</Btn>
-    </Card>
-    <Card><div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>📊 Stok Item Spesifik</div>{mats.length===0?<div style={{color:"#aaa",fontSize:13}}>Belum ada item. Tambah di Master Harga.</div>:mats.map(m=>(<div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 8px",borderBottom:"1px solid #f5f5f5",borderRadius:6,background:f.mid===m.id?"#f0f4ff":"transparent"}}><div><div style={{fontWeight:600,fontSize:13}}>{m.nama}</div><div style={{fontSize:11,color:"#bbb"}}>{m.kode}</div></div><div style={{textAlign:"right"}}><span style={{fontWeight:700,fontSize:15,color:(stok[m.id]||0)<10?C.err:C.ok}}>{stok[m.id]||0}</span><span style={{fontSize:12,color:"#aaa",marginLeft:4}}>{m.satuan}</span></div></div>))}</Card>
+  const saveMat=async()=>{
+    if(!f.qty||parseFloat(f.qty)<=0)return showNotif("Masukkan jumlah!","err");
+    const q=parseFloat(f.qty);
+    if(tab==="outbound"&&(stok[f.mid]||0)<q)return showNotif("Stok tidak cukup!","err");
+    const nq=(stok[f.mid]||0)+(tab==="inbound"?q:-q);
+    const detail=`${mat?.nama} ${tab==="inbound"?"masuk":"keluar"}: ${q} ${mat?.satuan}${f.ket?" — "+f.ket:""}`;
+    setSaving(true);
+    try{
+      await apPost({action:"updateStok",payload:{material_id:f.mid,qty:nq}});
+      await apPost({action:"saveTransaksi",payload:{id:genId(),type:tab,detail,tanggal:new Date().toISOString()}});
+      setStok(p=>({...p,[f.mid]:nq}));addTrx(tab,detail);
+      showNotif(`✅ ${mat?.nama} ${tab==="inbound"?"+":"-"}${q} ${mat?.satuan}`);
+      setF(x=>({...x,qty:"",ket:""}));
+    }catch(e){showNotif("Gagal: "+e.message,"err");}
+    setSaving(false);
+  };
+
+  // ── Mode Varian ────────────────────────────────────────
+  const [vf,setVF]=useState({katFilter:"Kain",varianId:"",qty:"",tanggal:todayStr(),ket:""});
+  const aktifVarian=kainList.filter(k=>k.status==="aktif");
+  const varianForKat=useMemo(()=>aktifVarian.filter(k=>(k.kategori||"Kain")===vf.katFilter),[aktifVarian,vf.katFilter]);
+  const selVarian=kainList.find(k=>k.id===vf.varianId);
+  const selJK=selVarian?jenisKain.find(j=>j.id===selVarian.jenisId):null;
+  const saveVarian=async()=>{
+    if(!vf.varianId||!vf.qty||parseFloat(vf.qty)<=0)return showNotif("Lengkapi semua field!","err");
+    const q=parseFloat(vf.qty);
+    if(tab==="outbound"&&(selVarian?.sisa||0)<q)return showNotif(`Sisa stok hanya ${selVarian?.sisa}!`,"err");
+    const newSisa=tab==="inbound"
+      ?parseFloat(((selVarian?.sisa||0)+q).toFixed(3))
+      :parseFloat(Math.max(0,(selVarian?.sisa||0)-q).toFixed(3));
+    const newStatus=newSisa<=0?"arsip":"aktif";
+    const sat=selJK?.satuan||getSatuan(selVarian?.kategori||"Kain");
+    const detail=`${selVarian?.jenisNama} ${selVarian?.kode} ${tab==="inbound"?"masuk (koreksi)":"keluar (cacat/rusak)"}: ${q} ${sat}${vf.ket?" — "+vf.ket:""}`;
+    setSaving(true);
+    try{
+      await apPost({action:"updateStokVarian",id:selVarian.id,kategori:selVarian.kategori,fields:{sisa:newSisa,status:newStatus}});
+      await apPost({action:"saveTransaksi",payload:{id:genId(),type:tab,detail,tanggal:new Date().toISOString()}});
+      setKainList(p=>p.map(k=>k.id===selVarian.id?{...k,sisa:newSisa,status:newStatus}:k));
+      addTrx(tab,detail);
+      showNotif(`✅ ${selVarian.kode} ${tab==="inbound"?"+":"-"}${q} ${sat}`);
+      setVF(x=>({...x,qty:"",ket:""}));
+    }catch(e){showNotif("Gagal: "+e.message,"err");}
+    setSaving(false);
+  };
+
+  const tabBtn=(id,label,color)=>(
+    <button onClick={()=>setTab(id)} style={{flex:1,padding:"10px 8px",borderRadius:8,border:`2px solid ${tab===id?color:"#ddd"}`,background:tab===id?color+"15":"#fff",color:tab===id?color:"#555",fontWeight:700,cursor:"pointer",fontSize:13}}>{label}</button>
+  );
+
+  return(<div>
+    {/* Toggle Mode */}
+    <div style={{display:"flex",gap:8,marginBottom:16}}>
+      {[{v:"material",icon:"📦",l:"Item Spesifik"},{v:"varian",icon:"🧵",l:"Kain / Varian"}].map(m=>(
+        <button key={m.v} onClick={()=>setMode(m.v)} style={{flex:1,padding:"10px 12px",borderRadius:10,border:`2px solid ${mode===m.v?C.pri:"#ddd"}`,background:mode===m.v?C.pri+"15":"#fff",color:mode===m.v?C.pri:"#555",fontWeight:700,cursor:"pointer",fontSize:13}}>
+          {m.icon} {m.l}
+        </button>
+      ))}
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+
+    {/* ── Mode Material ── */}
+    {mode==="material"&&<>
+      <Card>
+        <div style={{display:"flex",gap:8,marginBottom:18}}>{tabBtn("inbound","📥 Inbound",C.ok)}{tabBtn("outbound","📤 Outbound",C.err)}</div>
+        <div style={{background:"#f5f5f5",borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:"#555"}}>ℹ️ Untuk Item Spesifik (Hardbox, Kardus, Kancing tertentu, dll). Untuk kain/varian → pilih mode Kain / Varian.</div>
+        <div style={{marginBottom:12}}><label style={{fontSize:12,color:"#555",marginBottom:4,display:"block",fontWeight:600}}>Material *</label><select value={f.mid} onChange={e=>setF(x=>({...x,mid:e.target.value}))} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%",boxSizing:"border-box"}}>{mats.map(m=><option key={m.id} value={m.id}>{m.nama} ({m.kode})</option>)}</select></div>
+        {tab==="outbound"&&mat&&<div style={{background:"#f9f9f9",borderRadius:8,padding:"8px 12px",marginBottom:12,fontSize:13}}>Stok: <b style={{color:(stok[f.mid]||0)<10?C.err:C.ok}}>{stok[f.mid]||0} {mat.satuan}</b></div>}
+        <Inp label="Jumlah *" type="number" value={f.qty} onChange={v=>setF(x=>({...x,qty:v}))} placeholder="100" min="0"/>
+        <Inp label="Tanggal" type="date" value={f.tanggal} onChange={v=>setF(x=>({...x,tanggal:v}))}/>
+        <Inp label="Keterangan" value={f.ket} onChange={v=>setF(x=>({...x,ket:v}))} placeholder={tab==="inbound"?"Dari Supplier X":"Koreksi/rusak"}/>
+        <Btn onClick={saveMat} loading={saving} bg={tab==="inbound"?C.ok:C.err} style={{width:"100%"}}>{tab==="inbound"?"✅ Simpan Inbound":"✅ Simpan Outbound"}</Btn>
+      </Card>
+      <Card>
+        <div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>📊 Stok Item Spesifik</div>
+        {mats.length===0?<div style={{color:"#aaa",fontSize:13}}>Belum ada item. Tambah di Master Harga.</div>
+        :mats.map(m=>(<div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 8px",borderBottom:"1px solid #f5f5f5",borderRadius:6,background:f.mid===m.id?"#f0f4ff":"transparent"}}>
+          <div><div style={{fontWeight:600,fontSize:13}}>{m.nama}</div><div style={{fontSize:11,color:"#bbb"}}>{m.kode}</div></div>
+          <div style={{textAlign:"right"}}><span style={{fontWeight:700,fontSize:15,color:(stok[m.id]||0)<10?C.err:C.ok}}>{stok[m.id]||0}</span><span style={{fontSize:12,color:"#aaa",marginLeft:4}}>{m.satuan}</span></div>
+        </div>))}
+      </Card>
+    </>}
+
+    {/* ── Mode Varian / Kain ── */}
+    {mode==="varian"&&<>
+      <Card>
+        <div style={{display:"flex",gap:8,marginBottom:18}}>{tabBtn("inbound","📥 Inbound",C.ok)}{tabBtn("outbound","📤 Outbound",C.err)}</div>
+        <div style={{background:tab==="outbound"?"#fff3e0":"#e8f5e9",borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:tab==="outbound"?C.warn:C.ok}}>
+          {tab==="outbound"?"⚠️ Outbound untuk kain cacat/rusak/koreksi — akan mengurangi sisa stok":"📥 Inbound untuk koreksi stok kain (tambah sisa)"}
+        </div>
+        {/* Filter Kategori */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:12,color:"#555",marginBottom:4,display:"block",fontWeight:600}}>Kategori</label>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {VARIANT_CATS.map(cat=>(
+              <button key={cat} onClick={()=>setVF(x=>({...x,katFilter:cat,varianId:""}))} style={{padding:"5px 12px",borderRadius:20,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:vf.katFilter===cat?(CAT_COLOR[cat]||C.pri):"#f0f0f0",color:vf.katFilter===cat?"#fff":"#555"}}>{cat}</button>
+            ))}
+          </div>
+        </div>
+        {/* Pilih item */}
+        <div style={{marginBottom:12}}>
+          <label style={{fontSize:12,color:"#555",marginBottom:4,display:"block",fontWeight:600}}>Pilih {vf.katFilter} *</label>
+          {varianForKat.length===0
+            ?<div style={{color:"#aaa",fontSize:13,padding:"10px 0"}}>Tidak ada stok aktif untuk kategori ini</div>
+            :<select value={vf.varianId} onChange={e=>setVF(x=>({...x,varianId:e.target.value}))} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%",boxSizing:"border-box"}}>
+              <option value="">— Pilih item —</option>
+              {varianForKat.map(k=>{const jk=jenisKain.find(j=>j.id===k.jenisId);return(<option key={k.id} value={k.id}>{k.jenisNama} {k.kode} — sisa: {k.sisa} {jk?.satuan||"meter"}</option>);})}
+            </select>
+          }
+        </div>
+        {/* Info sisa */}
+        {selVarian&&<div style={{background:"#f9f9f9",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:13}}>
+          <div style={{display:"flex",justifyContent:"space-between"}}><span>Jenis:</span><b>{selVarian.jenisNama}</b></div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span>Kode:</span><b style={{fontFamily:"monospace"}}>{selVarian.kode}</b></div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:4}}><span>Sisa saat ini:</span><b style={{color:selVarian.sisa<1?C.err:C.ok}}>{selVarian.sisa} {selJK?.satuan||"meter"}</b></div>
+        </div>}
+        <Inp label={`Jumlah (${selJK?.satuan||"meter"}) *`} type="number" value={vf.qty} onChange={v=>setVF(x=>({...x,qty:v}))} placeholder="1.5" min="0.1" step="0.1"/>
+        <Inp label="Tanggal" type="date" value={vf.tanggal} onChange={v=>setVF(x=>({...x,tanggal:v}))}/>
+        <Inp label="Keterangan" value={vf.ket} onChange={v=>setVF(x=>({...x,ket:v}))} placeholder={tab==="inbound"?"Koreksi stok":"Kain cacat / rusak"}/>
+        {vf.qty&&selVarian&&<div style={{background:tab==="outbound"?"#fff3e0":"#e8f5e9",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:13}}>
+          <b>Sisa setelah:</b> {tab==="inbound"
+            ?parseFloat(((selVarian.sisa||0)+parseFloat(vf.qty||0)).toFixed(3))
+            :parseFloat(Math.max(0,(selVarian.sisa||0)-parseFloat(vf.qty||0)).toFixed(3))
+          } {selJK?.satuan||"meter"}
+        </div>}
+        <Btn onClick={saveVarian} loading={saving} disabled={!vf.varianId||varianForKat.length===0} bg={tab==="inbound"?C.ok:C.err} style={{width:"100%"}}>{tab==="inbound"?"✅ Simpan Inbound":"✅ Simpan Outbound"}</Btn>
+      </Card>
+      <Card>
+        <div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>📊 Stok {vf.katFilter} Aktif</div>
+        {varianForKat.length===0?<div style={{color:"#aaa",fontSize:13}}>Tidak ada stok aktif</div>
+        :varianForKat.map(k=>{const jk=jenisKain.find(j=>j.id===k.jenisId);return(
+          <div key={k.id} onClick={()=>setVF(x=>({...x,varianId:k.id}))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 8px",borderBottom:"1px solid #f5f5f5",borderRadius:6,cursor:"pointer",background:vf.varianId===k.id?"#f0f4ff":"transparent"}}>
+            <div>
+              <div style={{fontWeight:600,fontSize:13,fontFamily:"monospace"}}>{k.kode}</div>
+              <div style={{fontSize:11,color:"#aaa"}}>{k.jenisNama}</div>
+            </div>
+            <div style={{textAlign:"right"}}>
+              <span style={{fontWeight:700,fontSize:15,color:k.sisa<1?C.err:C.ok}}>{k.sisa}</span>
+              <span style={{fontSize:12,color:"#aaa",marginLeft:4}}>{jk?.satuan||"m"}</span>
+            </div>
+          </div>
+        );})}
+      </Card>
+    </>}
+    </div>
   </div>);
 }
 
@@ -685,7 +823,7 @@ function App(){
     case "buat-paket":   return <BuatPaket {...p}/>;
     case "daftar-paket": return <DaftarPaket pkgs={pkgs} setPkgs={setPkgs} onViewPaket={setViewPaket} showNotif={showNotif} role={role}/>;
     case "menu-order":   return <MenuOrder {...p}/>;
-    case "inbound":      return <InboundOutbound {...p}/>;
+    case "inbound":      return <InboundOutbound mats={mats} stok={stok} setStok={setStok} kainList={kainList} setKainList={setKainList} jenisKain={jenisKain} addTrx={addTrx} showNotif={showNotif}/>;
     case "riwayat":      return <Riwayat trxs={trxs}/>;
     case "rekap":        return <RekapBulanan trxs={trxs} showNotif={showNotif}/>;
     case "arsip-varian": return <ArsipVarian kainList={kainList}/>;

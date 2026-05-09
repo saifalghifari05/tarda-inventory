@@ -863,7 +863,7 @@ function DaftarPaket({ pkgs, setPkgs, onView, showNotif, role }) {
               <TD>{p.customer||<span style={{color:"#ccc"}}>–</span>}</TD>
               <TD><span style={{fontWeight:700,color:C.ok}}>{fmtRp(p.hpp)}</span></TD>
               <TD style={{fontSize:12}}>{String(p.tanggal).split("T")[0]}</TD>
-              <TD><select value={p.status} onChange={e=>ubahStatus(p,e.target.value)} style={{border:"1px solid #ddd",borderRadius:6,padding:"4px 8px",fontSize:12,cursor:"pointer",background:p.status==="pending"?C.warn+"22":C.ok+"22",color:p.status==="pending"?C.warn:C.ok,fontWeight:600}}><option value="pending">⏳ Pending</option><option value="selesai">✅ Selesai</option></select></TD>
+              <TD><Badge label={p.status==="selesai"?"✅ Selesai":"⏳ Pending"} color={p.status==="selesai"?C.ok:C.warn}/></TD>
               <TD><div style={{display:"flex",gap:6}}><Ghost onClick={()=>onView(p)} style={{padding:"5px 10px",fontSize:12}}>👁️</Ghost>{canEdit&&<Ghost onClick={()=>hapus(p)} style={{padding:"5px 10px",fontSize:12,color:C.err}}>🗑️</Ghost>}</div></TD>
             </tr>
           ))}</tbody>

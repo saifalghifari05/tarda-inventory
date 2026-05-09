@@ -80,7 +80,7 @@ const toState = d => {
       jenisId: k.jenis_id || k.jenisid || "",
       jenisNama: k.jenis_nama || k.jenisnama || "",
       kodePrefix: k.kode_prefix || k.kodeprefix || "",
-      qty: toNum(k.qty), sisa: toNum(k.sisa), kategori: k.kategori || "Kain"
+      qty: toNum(k.qty) || toNum(k.sisa), sisa: toNum(k.sisa), kategori: k.kategori || "Kain"
     })),
     pkgs: (d.pakets || []).map(p => ({
       ...p, hpp: toNum(p.hpp),
@@ -621,7 +621,7 @@ function StokVarian({ stokVarian, setStokVarian, jenis, showNotif, addTrx }) {
       kode_prefix: jk.kodePrefix || "",
       warna: f.kodeVar.trim().toUpperCase(),
       tipe: isKain ? f.tipe : "standard",
-      qty, sisa: qty, customer,
+      qty: Number(qty), sisa: Number(qty), customer,
       tanggal: f.tanggal, status:"aktif", kategori: activeKat
     };
     // State local
@@ -889,8 +889,14 @@ function MenuOrder({ pkgs, setPkgs, stok, setStok, stokVarian, setStokVarian, ad
     setSaving(true);
     try {
       const res = await apPost({ action:"processOrder", paketId:found.id, items:found.items });
-      // Log dari GAS untuk debug
-      if (res && res.log) console.log("processOrder log:", res.log);
+      // Log dari GAS
+      if (res && res.log) {
+        console.log("processOrder log:", res.log);
+        const failed = res.log.filter(l => l.includes("NOT FOUND") || l.includes("SKIP"));
+        if (failed.length > 0) {
+          setTimeout(() => showNotif("⚠️ " + failed[0], "err"), 2000);
+        }
+      }
 
       const detail = `Order keluar: ${found.nama} (${found.kode})`;
       await apPost({ action:"saveTransaksi", payload:{ id:genId(), type:"outbound", detail, tanggal:new Date().toISOString() } });

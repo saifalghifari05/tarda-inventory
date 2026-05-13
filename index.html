@@ -383,7 +383,7 @@ function MasterHarga({jenis,setJenis,showNotif,role}){
 }
 
 // ─── STOK VARIAN — semua kategori ────────────────────────
-function StokVarian({jenis,stokVarian,setStokVarian,showNotif,addTrx}){
+function StokVarian({jenis,stokVarian,setStokVarian,showNotif,addTrx,role}){
   const [activeKat,setActiveKat]=useState("Kain");
   const [search,setSearch]=useState("");
   const [modal,setModal]=useState(false);
@@ -410,7 +410,7 @@ function StokVarian({jenis,stokVarian,setStokVarian,showNotif,addTrx}){
     if(stokVarian.find(k=>k.kode===kode&&k.status==="aktif"&&(k.kategori||"Kain")===activeKat))return showNotif(`Kode ${kode} sudah aktif!`,"err");
     const id=genId();const qty=parseFloat(f.qty);
     const customer=isKain&&f.tipe==="potongan"?f.customer:"";
-    const payload={id,kode,jenis_id:f.jenisId,jenis_nama:jk.nama,kode_prefix:jk.kodePrefix||"",warna:f.kodeVar.trim().toUpperCase(),tipe:isKain?f.tipe:"standard",qty:Number(qty),sisa:Number(qty),customer,tanggal:f.tanggal,status:"aktif",kategori:activeKat};
+    const payload={id,kode,jenis_id:f.jenisId,jenis_nama:jk.nama,kode_prefix:jk.kodePrefix||"",warna:f.kodeVar.trim().toUpperCase(),tipe:isKain?f.tipe:"standard",qty:Number(qty),sisa:Number(qty),customer,tanggal:f.tanggal,status:"aktif",kategori:activeKat}; // status selalu aktif saat tambah baru
     const stLocal={id,kode,jenisId:f.jenisId,jenisNama:jk.nama,kodePrefix:jk.kodePrefix||"",warna:f.kodeVar.trim().toUpperCase(),tipe:isKain?f.tipe:"standard",qty,sisa:qty,customer,tanggal:f.tanggal,status:"aktif",kategori:activeKat};
     const trx={id:genId(),type:"inbound",detail:`${activeKat} masuk: ${jk.nama} ${kode}${customer?" — "+customer:""}`,tanggal:new Date().toISOString()};
     setSaving(true);
@@ -447,7 +447,7 @@ function StokVarian({jenis,stokVarian,setStokVarian,showNotif,addTrx}){
                 <TD><span style={{fontWeight:700,color:k.sisa<1?C.err:C.ok}}>{k.sisa} {sat}</span></TD>
                 {isKain&&<TD>{k.customer||<span style={{color:"#ccc"}}>–</span>}</TD>}
                 <TD style={{fontSize:12}}>{String(k.tanggal).split("T")[0]}</TD>
-                <TD><Ghost onClick={()=>arsip(k)} style={{padding:"5px 10px",fontSize:12,color:C.warn}}>🗃️</Ghost></TD>
+                <TD>{role==="owner"&&<Ghost onClick={()=>arsip(k)} style={{padding:"5px 10px",fontSize:12,color:C.warn}}>🗃️</Ghost>}</TD>
               </tr>
             );})}</tbody>
           </Tbl>
@@ -635,7 +635,8 @@ function BulkOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif}){
       for(const k of selectedItems){
         const qty=parseFloat(qtys[k.id]);
         const newSisa=parseFloat(Math.max(0,k.sisa-qty).toFixed(3));
-        const newStatus=newSisa<=0?"arsip":"aktif";
+        // Auto-arsip hanya untuk Kain
+        const newStatus=(newSisa<=0&&k.kategori==="Kain")?"arsip":"aktif";
         await apPost({action:"patchStokVarian",id:k.id,fields:{sisa:newSisa,status:newStatus}});
         setStokVarian(p=>p.map(x=>x.id===k.id?{...x,sisa:newSisa,status:newStatus}:x));
       }
@@ -716,7 +717,8 @@ function InboundOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif,role})
     const q=parseFloat(vf.qty);
     if(tab==="outbound"&&(selVarian?.sisa||0)<q)return showNotif(`Sisa stok hanya ${selVarian?.sisa}!`,"err");
     const newSisa=tab==="inbound"?+((selVarian?.sisa||0)+q).toFixed(3):+Math.max(0,(selVarian?.sisa||0)-q).toFixed(3);
-    const newStatus=newSisa<=0?"arsip":"aktif";
+    // Auto-arsip hanya untuk Kain
+    const newStatus=(newSisa<=0&&selVarian?.kategori==="Kain")?"arsip":"aktif";
     const sat=selJK?.satuan||"pcs";
     const detail=`${selVarian?.jenisNama} ${selVarian?.kode} ${tab==="inbound"?"masuk (koreksi)":"keluar (cacat/rusak)"}: ${q} ${sat}${vf.ket?" — "+vf.ket:""}`;
     setSaving(true);
@@ -822,21 +824,45 @@ function RekapBulanan({trxs,showNotif}){
   </div>);
 }
 
-// ─── ARSIP VARIAN ────────────────────────────────────────
-function ArsipVarian({stokVarian}){
+// ─── ARSIP VARIAN — load on-demand dari GAS ──────────────
+function ArsipVarian(){
+  const [list,setList]=useState([]);
+  const [loaded,setLoaded]=useState(false);const [loading,setLoading]=useState(false);
   const [search,setSearch]=useState("");const [katFilter,setKatFilter]=useState("Semua");const [pg,setPg]=useState(1);const PS=10;
-  const list=useMemo(()=>{let l=stokVarian.filter(k=>k.status==="arsip");if(katFilter!=="Semua")l=l.filter(k=>(k.kategori||"Kain")===katFilter);if(search)l=l.filter(k=>k.kode.toLowerCase().includes(search.toLowerCase())||k.jenisNama.toLowerCase().includes(search.toLowerCase())||(k.customer||"").toLowerCase().includes(search.toLowerCase()));return l;},[stokVarian,katFilter,search]);
-  const paged=list.slice((pg-1)*PS,pg*PS);
+
+  const loadArsip=async()=>{
+    setLoading(true);
+    try{
+      const r=await fetch(API+"?action=getArsipVarian",{redirect:"follow"});
+      const j=JSON.parse(await r.text());
+      if(j.success){
+        setList(j.data.map(k=>({...k,jenisId:k.jenis_id||"",jenisNama:k.jenis_nama||"",kategori:k.kategori||"Kain",qty:parseFloat(k.qty)||0,sisa:parseFloat(k.sisa)||0})));
+        setLoaded(true);
+      }
+    }catch(e){}
+    setLoading(false);
+  };
+
+  const filtered=useMemo(()=>{let l=list;if(katFilter!=="Semua")l=l.filter(k=>(k.kategori||"Kain")===katFilter);if(search)l=l.filter(k=>k.kode.toLowerCase().includes(search.toLowerCase())||k.jenisNama.toLowerCase().includes(search.toLowerCase())||(k.customer||"").toLowerCase().includes(search.toLowerCase()));return l;},[list,katFilter,search]);
+  const paged=filtered.slice((pg-1)*PS,pg*PS);
+
+  if(!loaded)return(<Card style={{textAlign:"center",padding:40}}>
+    <div style={{fontSize:40,marginBottom:12}}>🗃️</div>
+    <div style={{color:"#888",marginBottom:16,fontSize:13}}>Data arsip dimuat saat dibutuhkan saja untuk menjaga performa.</div>
+    <Btn onClick={loadArsip} loading={loading}>Muat Data Arsip</Btn>
+  </Card>);
+
   return(<Card>
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
-      <div style={{fontWeight:700,fontSize:14,color:C.pri}}>🗃️ Arsip Varian <span style={{fontSize:12,color:"#aaa",fontWeight:400}}>({list.length} item)</span></div>
-      <div style={{display:"flex",gap:8}}>
+      <div style={{fontWeight:700,fontSize:14,color:C.pri}}>🗃️ Arsip Varian <span style={{fontSize:12,color:"#aaa",fontWeight:400}}>({filtered.length} item)</span></div>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
         <select value={katFilter} onChange={e=>{setKatFilter(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"8px 12px",fontSize:13}}><option value="Semua">Semua</option>{ALL_KAT.map(c=><option key={c} value={c}>{c}</option>)}</select>
-        <input placeholder="🔍 Cari..." value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:180}}/>
+        <input placeholder="🔍 Cari..." value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:160}}/>
+        <Ghost onClick={loadArsip} style={{padding:"8px 12px",fontSize:12}}>🔄 Refresh</Ghost>
       </div>
     </div>
-    {list.length===0?<div style={{textAlign:"center",padding:40,color:"#ccc"}}>Tidak ada item di arsip</div>
-    :<><Tbl><TH cols={["Kode","Kategori","Jenis","Warna","Qty","Customer","Tgl"]}/><tbody>{paged.map(k=><tr key={k.id} style={{opacity:.7}}><TD><span style={{fontFamily:"monospace",fontSize:12,fontWeight:700}}>{k.kode}</span></TD><TD><Badge label={k.kategori||"Kain"} color={CAT_COLOR[k.kategori]||C.acc}/></TD><TD>{k.jenisNama}</TD><TD><Badge label={k.warna||"–"} color="#9e9e9e"/></TD><TD>{k.qty}</TD><TD>{k.customer||"–"}</TD><TD style={{fontSize:12}}>{String(k.tanggal).split("T")[0]}</TD></tr>)}</tbody></Tbl><Pg page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/></>}
+    {filtered.length===0?<div style={{textAlign:"center",padding:40,color:"#ccc"}}>Tidak ada item di arsip</div>
+    :<><Tbl><TH cols={["Kode","Kategori","Jenis","Warna","Qty","Customer","Tgl"]}/><tbody>{paged.map(k=><tr key={k.id} style={{opacity:.7}}><TD><span style={{fontFamily:"monospace",fontSize:12,fontWeight:700}}>{k.kode}</span></TD><TD><Badge label={k.kategori||"Kain"} color={CAT_COLOR[k.kategori]||C.acc}/></TD><TD>{k.jenisNama}</TD><TD><Badge label={k.warna||"–"} color="#9e9e9e"/></TD><TD>{k.qty}</TD><TD>{k.customer||"–"}</TD><TD style={{fontSize:12}}>{String(k.tanggal).split("T")[0]}</TD></tr>)}</tbody></Tbl><Pg page={pg} total={Math.ceil(filtered.length/PS)} onChange={setPg}/></>}
   </Card>);
 }
 
@@ -895,14 +921,14 @@ function App(){
     case "dashboard":    return <Dashboard jenis={jenis} stokVarian={stokVarian} pkgs={pkgs} onView={setViewPaket}/>;
     case "nilai-stok":   return <NilaiStok jenis={jenis} stokVarian={stokVarian}/>;
     case "master-harga": return <MasterHarga jenis={jenis} setJenis={setJenis} showNotif={showNotif} role={role}/>;
-    case "stok-varian":  return <StokVarian jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} showNotif={showNotif} addTrx={addTrx}/>;
+    case "stok-varian":  return <StokVarian jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} showNotif={showNotif} addTrx={addTrx} role={role}/>;
     case "buat-paket":   return <BuatPaket jenis={jenis} stokVarian={stokVarian} pkgs={pkgs} setPkgs={setPkgs} showNotif={showNotif}/>;
     case "daftar-paket": return <DaftarPaket pkgs={pkgs} setPkgs={setPkgs} onView={setViewPaket} showNotif={showNotif} role={role}/>;
     case "menu-order":   return <MenuOrder pkgs={pkgs} setPkgs={setPkgs} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif} onReload={loadAll} apiUrl={API}/>;
     case "inbound":      return <InboundOutbound jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif} role={role}/>;
     case "riwayat":      return <Riwayat trxs={trxs}/>;
     case "rekap":        return <RekapBulanan trxs={trxs} showNotif={showNotif}/>;
-    case "arsip":        return <ArsipVarian stokVarian={stokVarian}/>;
+    case "arsip":        return <ArsipVarian/>;
     default: return null;
   }};
 

@@ -183,7 +183,7 @@ function LoadingScreen({error,onRetry}){return(
 
 function LoginPage({onLogin}){
   const [sel,setSel]=useState(null);const [pw,setPw]=useState("");const [url,setUrl]=useState(localStorage.getItem("tarda_api")||"");const [errMsg,setErrMsg]=useState("");
-  const PWS={owner:"052731",admin:"1234"};
+  const PWS={owner:"052731",admin:"1234",finishing:"5678"};
   const login=()=>{
     if(!url.trim())return setErrMsg("Masukkan URL Apps Script!");
     if(!url.includes("script.google.com"))return setErrMsg("URL tidak valid");
@@ -197,7 +197,7 @@ function LoginPage({onLogin}){
       <div style={{textAlign:"center",marginBottom:28}}><div style={{fontSize:52}}>👔</div><div style={{fontWeight:800,fontSize:22,color:C.pri,marginTop:8}}>Tarda Tailor</div><div style={{fontSize:13,color:"#888",marginTop:4}}>Inventory System</div></div>
       <div style={{marginBottom:16}}><label style={{fontSize:12,color:"#555",marginBottom:6,display:"block",fontWeight:600}}>URL Google Apps Script</label><input value={url} onChange={e=>{setUrl(e.target.value);setErrMsg("");}} placeholder="https://script.google.com/macros/s/.../exec" style={{border:"1px solid #ddd",borderRadius:8,padding:"10px 12px",fontSize:12,width:"100%",boxSizing:"border-box",fontFamily:"monospace"}}/></div>
       <div style={{fontSize:12,color:"#555",fontWeight:600,marginBottom:8}}>Login sebagai:</div>
-      <div style={{display:"flex",gap:10,marginBottom:16}}>{[{id:"owner",l:"👑 Owner"},{id:"admin",l:"🏪 Admin Gudang"}].map(r=>(<button key={r.id} onClick={()=>{setSel(r.id);setErrMsg("");}} style={{flex:1,padding:"12px 8px",borderRadius:10,border:`2px solid ${sel===r.id?C.pri:"#ddd"}`,background:sel===r.id?C.pri+"15":"#fff",color:sel===r.id?C.pri:"#555",fontWeight:700,cursor:"pointer",fontSize:13}}>{r.l}</button>))}</div>
+      <div style={{display:"flex",gap:10,marginBottom:16}}>{[{id:"owner",l:"👑 Owner"},{id:"admin",l:"🏪 Admin Gudang"},{id:"finishing",l:"✂️ Finishing"}].map(r=>(<button key={r.id} onClick={()=>{setSel(r.id);setErrMsg("");}} style={{flex:1,padding:"12px 8px",borderRadius:10,border:`2px solid ${sel===r.id?C.pri:"#ddd"}`,background:sel===r.id?C.pri+"15":"#fff",color:sel===r.id?C.pri:"#555",fontWeight:700,cursor:"pointer",fontSize:13}}>{r.l}</button>))}</div>
       <Inp label="Password" value={pw} onChange={v=>{setPw(v);setErrMsg("");}} type="password" placeholder="Password"/>
       {errMsg&&<div style={{color:C.err,fontSize:12,marginBottom:8}}>❌ {errMsg}</div>}
       <button onClick={login} style={{width:"100%",padding:13,background:C.pri,color:"#fff",border:"none",borderRadius:10,fontSize:15,fontWeight:700,cursor:"pointer",marginTop:4}}>Masuk →</button>
@@ -608,8 +608,103 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
   </div>);
 }
 
+
+// ─── KATEGORI PACKAGING (untuk finishing role) ────────────
+const FINISHING_CATS = ["Kancing","Hardbox","Pin","Tarboosh","Mika","Kardus","Kabak","Plastik Zipper"];
+
+// ─── BULK OUTBOUND — khusus finishing role ────────────────
+function BulkOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif}){
+  const aktif=stokVarian.filter(k=>k.status==="aktif"&&FINISHING_CATS.includes(k.kategori));
+  const [qtys,setQtys]=useState({});const [saving,setSaving]=useState(false);
+
+  const selectedItems=aktif.filter(k=>parseFloat(qtys[k.id]||0)>0);
+  const hasError=selectedItems.some(k=>parseFloat(qtys[k.id]||0)>k.sisa);
+
+  // Grup per kategori
+  const grouped=FINISHING_CATS.reduce((acc,kat)=>{
+    const items=aktif.filter(k=>k.kategori===kat);
+    if(items.length>0)acc[kat]=items;
+    return acc;
+  },{});
+
+  const save=async()=>{
+    if(selectedItems.length===0)return showNotif("Isi jumlah minimal 1 item!","err");
+    if(hasError)return showNotif("Ada jumlah yang melebihi sisa stok!","err");
+    setSaving(true);
+    try{
+      for(const k of selectedItems){
+        const qty=parseFloat(qtys[k.id]);
+        const newSisa=parseFloat(Math.max(0,k.sisa-qty).toFixed(3));
+        const newStatus=newSisa<=0?"arsip":"aktif";
+        await apPost({action:"patchStokVarian",id:k.id,fields:{sisa:newSisa,status:newStatus}});
+        setStokVarian(p=>p.map(x=>x.id===k.id?{...x,sisa:newSisa,status:newStatus}:x));
+      }
+      const detail="Bulk outbound finishing: "+selectedItems.map(k=>{const jk=jenis.find(j=>j.id===k.jenisId);return`${k.jenisNama} ${k.kode} ×${qtys[k.id]}${jk?.satuan||"pcs"}`;}).join(", ");
+      await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,tanggal:new Date().toISOString()}});
+      addTrx("outbound",detail);
+      showNotif(`✅ ${selectedItems.length} item berhasil dioutbound!`);
+      setQtys({});
+    }catch(e){showNotif("Gagal: "+e.message,"err");}
+    setSaving(false);
+  };
+
+  if(aktif.length===0)return<Card><div style={{textAlign:"center",padding:40,color:"#ccc"}}>Tidak ada stok packaging aktif.<br/>Tambah stok di menu Stok Varian.</div></Card>;
+
+  return(<div>
+    <div style={{background:"#fff3e0",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.warn}}>
+      📤 Isi jumlah keluar untuk setiap item — kosongkan atau isi 0 jika tidak ada keluar. Klik <b>Outbound Sekarang</b> setelah selesai.
+    </div>
+
+    {Object.entries(grouped).map(([kat,items])=>(
+      <Card key={kat} style={{marginBottom:12}}>
+        <div style={{fontWeight:700,fontSize:13,color:CAT_COLOR[kat]||C.pri,marginBottom:10}}>{CAT_ICON[kat]} {kat}</div>
+        {items.map(k=>{
+          const jk=jenis.find(j=>j.id===k.jenisId);
+          const qty=qtys[k.id]||"";
+          const isOver=parseFloat(qty||0)>k.sisa;
+          return(
+            <div key={k.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #f5f5f5"}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  {k.jenisNama} <span style={{fontFamily:"monospace",color:CAT_COLOR[kat]||C.pri,fontSize:12}}>{k.kode}</span>
+                </div>
+                <div style={{fontSize:11,color:isOver?C.err:"#888",marginTop:2}}>
+                  Sisa: <b style={{color:isOver?C.err:k.sisa<5?C.warn:C.ok}}>{k.sisa}</b> {jk?.satuan||"pcs"}
+                </div>
+              </div>
+              <input type="number" value={qty} onChange={e=>setQtys(p=>({...p,[k.id]:e.target.value}))}
+                min="0" step="1" placeholder="0"
+                style={{width:68,border:`1.5px solid ${isOver?C.err:parseFloat(qty||0)>0?"#43a047":"#ddd"}`,borderRadius:8,padding:"8px",fontSize:15,textAlign:"center",fontWeight:600,outline:"none"}}/>
+              <span style={{fontSize:12,color:"#888",width:36,flexShrink:0,textAlign:"left"}}>{jk?.satuan||"pcs"}</span>
+            </div>
+          );
+        })}
+      </Card>
+    ))}
+
+    {selectedItems.length>0&&(
+      <Card style={{border:`2px solid ${hasError?C.err:C.warn}`,background:hasError?"#fff3f3":"#fff8f0",position:"sticky",bottom:12}}>
+        <div style={{fontWeight:700,marginBottom:10,fontSize:13,color:hasError?C.err:C.warn}}>
+          {hasError?"⚠️ Ada jumlah melebihi sisa stok!":"📋 Ringkasan Outbound"}
+        </div>
+        <div style={{maxHeight:140,overflowY:"auto",marginBottom:10}}>
+          {selectedItems.map(k=>{const jk=jenis.find(j=>j.id===k.jenisId);const over=parseFloat(qtys[k.id]||0)>k.sisa;return(
+            <div key={k.id} style={{display:"flex",justifyContent:"space-between",padding:"4px 0",fontSize:13,color:over?C.err:"#333",borderBottom:"1px solid #f5f5f5"}}>
+              <span>{k.jenisNama} <span style={{fontFamily:"monospace",fontSize:12}}>{k.kode}</span></span>
+              <b style={{color:over?C.err:C.ok}}>×{qtys[k.id]} {jk?.satuan||"pcs"}</b>
+            </div>
+          );})}
+        </div>
+        <Btn onClick={save} loading={saving} disabled={hasError} bg={C.err} style={{width:"100%",padding:"13px",fontSize:15}}>
+          📤 Outbound Sekarang ({selectedItems.length} item)
+        </Btn>
+      </Card>
+    )}
+  </div>);
+}
+
 // ─── INBOUND / OUTBOUND (stok_varian adjustment) ─────────
-function InboundOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif}){
+function InboundOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif,role}){
   const [tab,setTab]=useState("inbound");const [saving,setSaving]=useState(false);
   const [vf,setVF]=useState({katFilter:"Kain",varianId:"",qty:"",tanggal:today(),ket:""});
   const aktif=stokVarian.filter(k=>k.status==="aktif");
@@ -631,6 +726,45 @@ function InboundOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif}){
   };
 
   const tabBtn=(id,label,color)=><button onClick={()=>setTab(id)} style={{flex:1,padding:"10px 8px",borderRadius:8,border:`2px solid ${tab===id?color:"#ddd"}`,background:tab===id?color+"15":"#fff",color:tab===id?color:"#555",fontWeight:700,cursor:"pointer",fontSize:13}}>{label}</button>;
+
+  // Finishing role: tampilkan Bulk Outbound
+  if(role==="finishing") return(
+    <div>
+      <div style={{display:"flex",gap:8,marginBottom:16}}>
+        {tabBtn("inbound","📥 Inbound",C.ok)}
+        {tabBtn("bulk","📤 Bulk Outbound",C.err)}
+      </div>
+      {tab==="inbound"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
+        <Card>
+          <div style={{background:"#e8f5e9",borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:C.ok}}>📥 Tambah stok masuk — pilih kategori dan item</div>
+          <div style={{marginBottom:12}}><label style={{fontSize:12,color:"#555",marginBottom:4,display:"block",fontWeight:600}}>Kategori</label>
+            <div className="kat-tabs">{FINISHING_CATS.map(cat=><button key={cat} onClick={()=>setVF(x=>({...x,katFilter:cat,varianId:""}))} style={{padding:"5px 12px",borderRadius:20,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:vf.katFilter===cat?(CAT_COLOR[cat]||C.pri):"#f0f0f0",color:vf.katFilter===cat?"#fff":"#555"}}>{cat}</button>)}</div>
+          </div>
+          <div style={{marginBottom:12}}><label style={{fontSize:12,color:"#555",marginBottom:4,display:"block",fontWeight:600}}>Pilih Item *</label>
+            {stokVarian.filter(k=>k.status==="aktif"&&k.kategori===vf.katFilter).length===0?<div style={{color:"#aaa",fontSize:13,padding:"10px 0"}}>Tidak ada stok aktif</div>
+            :<select value={vf.varianId} onChange={e=>setVF(x=>({...x,varianId:e.target.value}))} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%",boxSizing:"border-box"}}>
+              <option value="">— Pilih —</option>
+              {stokVarian.filter(k=>k.status==="aktif"&&k.kategori===vf.katFilter).map(k=>{const jk=jenis.find(j=>j.id===k.jenisId);return<option key={k.id} value={k.id}>{k.jenisNama} {k.kode} — sisa: {k.sisa} {jk?.satuan||""}</option>;})}
+            </select>}
+          </div>
+          {selVarian&&<div style={{background:"#f9f9f9",borderRadius:8,padding:"10px 12px",marginBottom:12,fontSize:13}}><div style={{display:"flex",justifyContent:"space-between"}}><span>Sisa saat ini:</span><b style={{color:selVarian.sisa<5?C.warn:C.ok}}>{selVarian.sisa} {selJK?.satuan||""}</b></div></div>}
+          <Inp label={`Jumlah masuk (${selJK?.satuan||"pcs"}) *`} type="number" value={vf.qty} onChange={v=>setVF(x=>({...x,qty:v}))} placeholder="100" min="1"/>
+          <Inp label="Keterangan" value={vf.ket} onChange={v=>setVF(x=>({...x,ket:v}))} placeholder="Dari supplier..."/>
+          <Btn onClick={save} loading={saving} disabled={!vf.varianId} bg={C.ok} style={{width:"100%"}}>✅ Simpan Inbound</Btn>
+        </Card>
+        <Card><div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>📊 Stok {vf.katFilter}</div>
+          {stokVarian.filter(k=>k.status==="aktif"&&k.kategori===vf.katFilter).length===0?<div style={{color:"#aaa",fontSize:13}}>Tidak ada stok aktif</div>
+          :stokVarian.filter(k=>k.status==="aktif"&&k.kategori===vf.katFilter).map(k=>{const jk=jenis.find(j=>j.id===k.jenisId);return(
+            <div key={k.id} onClick={()=>setVF(x=>({...x,varianId:k.id}))} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 8px",borderBottom:"1px solid #f5f5f5",borderRadius:6,cursor:"pointer",background:vf.varianId===k.id?"#f0f4ff":"transparent"}}>
+              <div><div style={{fontWeight:600,fontSize:13,fontFamily:"monospace"}}>{k.kode}</div><div style={{fontSize:11,color:"#aaa"}}>{k.jenisNama}</div></div>
+              <div style={{textAlign:"right"}}><span style={{fontWeight:700,fontSize:15,color:k.sisa<5?C.warn:C.ok}}>{k.sisa}</span><span style={{fontSize:12,color:"#aaa",marginLeft:4}}>{jk?.satuan||""}</span></div>
+            </div>
+          );})}
+        </Card>
+      </div>}
+      {tab==="bulk"&&<BulkOutbound jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif}/>}
+    </div>
+  );
 
   return(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
     <Card>
@@ -721,6 +855,7 @@ const ALL_MENU=[
   {id:"arsip",        icon:"🗃️",label:"Arsip Varian"},
 ];
 const ADMIN_IDS=["dashboard","nilai-stok","stok-varian","buat-paket","daftar-paket","menu-order","inbound","riwayat"];
+const FINISHING_IDS=ADMIN_IDS; // finishing akses sama dengan admin
 
 // ─── APP ─────────────────────────────────────────────────
 function App(){
@@ -753,7 +888,7 @@ function App(){
   if(loading)return <LoadingScreen/>;
   if(loadErr)return <LoadingScreen error={loadErr} onRetry={loadAll}/>;
 
-  const menuItems=role==="owner"?ALL_MENU:ALL_MENU.filter(m=>ADMIN_IDS.includes(m.id));
+  const menuItems=role==="owner"?ALL_MENU:ALL_MENU.filter(m=>(role==="finishing"?FINISHING_IDS:ADMIN_IDS).includes(m.id));
   const cur=menuItems.find(m=>m.id===page)||menuItems[0];
 
   const renderPage=()=>{switch(page){
@@ -764,7 +899,7 @@ function App(){
     case "buat-paket":   return <BuatPaket jenis={jenis} stokVarian={stokVarian} pkgs={pkgs} setPkgs={setPkgs} showNotif={showNotif}/>;
     case "daftar-paket": return <DaftarPaket pkgs={pkgs} setPkgs={setPkgs} onView={setViewPaket} showNotif={showNotif} role={role}/>;
     case "menu-order":   return <MenuOrder pkgs={pkgs} setPkgs={setPkgs} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif} onReload={loadAll} apiUrl={API}/>;
-    case "inbound":      return <InboundOutbound jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif}/>;
+    case "inbound":      return <InboundOutbound jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif} role={role}/>;
     case "riwayat":      return <Riwayat trxs={trxs}/>;
     case "rekap":        return <RekapBulanan trxs={trxs} showNotif={showNotif}/>;
     case "arsip":        return <ArsipVarian stokVarian={stokVarian}/>;
@@ -783,7 +918,7 @@ function App(){
         {isMobile&&<button onClick={()=>setSidebar(false)} style={{background:"none",border:"none",color:"#fff",cursor:"pointer",fontSize:22,padding:4,flexShrink:0}}>×</button>}
       </div>
       <div style={{flex:1,overflowY:"auto",overflowX:"hidden"}}>{menuItems.map(m=><button key={m.id} onClick={()=>navTo(m.id)} title={m.label} style={{display:"flex",alignItems:"center",gap:12,padding:"13px 16px",width:"100%",background:page===m.id?"rgba(255,255,255,.15)":"transparent",border:"none",borderLeft:`3px solid ${page===m.id?"#64b5f6":"transparent"}`,color:"#fff",cursor:"pointer",textAlign:"left",fontSize:14,whiteSpace:"nowrap",transition:"background .15s"}}><span style={{fontSize:18,flexShrink:0}}>{m.icon}</span><span style={{overflow:"hidden",textOverflow:"ellipsis"}}>{m.label}</span></button>)}</div>
-      <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,.1)"}}><div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginBottom:6}}>{role==="owner"?"👑 Owner":"🏪 Admin Gudang"}</div><button onClick={doLogout} style={{fontSize:12,color:"rgba(255,255,255,.6)",background:"none",border:"1px solid rgba(255,255,255,.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer",width:"100%"}}>🚪 Logout</button></div>
+      <div style={{padding:"12px 16px",borderTop:"1px solid rgba(255,255,255,.1)"}}><div style={{fontSize:11,color:"rgba(255,255,255,.5)",marginBottom:6}}>{role==="owner"?"👑 Owner":role==="finishing"?"✂️ Finishing":"🏪 Admin Gudang"}</div><button onClick={doLogout} style={{fontSize:12,color:"rgba(255,255,255,.6)",background:"none",border:"1px solid rgba(255,255,255,.2)",borderRadius:6,padding:"5px 10px",cursor:"pointer",width:"100%"}}>🚪 Logout</button></div>
     </div>
     {/* Main content */}
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minWidth:0}}>
@@ -792,7 +927,7 @@ function App(){
           {isMobile&&<button onClick={()=>setSidebar(true)} style={{background:"none",border:"none",cursor:"pointer",fontSize:22,color:C.pri,padding:4,flexShrink:0}}>☰</button>}
           <div style={{fontWeight:700,fontSize:isMobile?15:17,color:C.pri,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{cur?.icon} {cur?.label}</div>
         </div>
-        <Badge label={role==="owner"?"👑 Owner":"🏪 Admin"} color={role==="owner"?C.warn:C.acc}/>
+        <Badge label={role==="owner"?"👑 Owner":role==="finishing"?"✂️ Finishing":"🏪 Admin"} color={role==="owner"?C.warn:C.acc}/>
       </div>
       <div style={{flex:1,overflow:"auto",padding:isMobile?12:20}}>{renderPage()}</div>
     </div>

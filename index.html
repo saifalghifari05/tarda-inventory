@@ -500,8 +500,8 @@ function BuatPaket({jenis,stokVarian,pkgs,setPkgs,showNotif}){
   const allPickable=useMemo(()=>aktif.map(k=>{const jk=jenis.find(j=>j.id===k.jenisId);return{id:k.id,type:"varian",nama:`${k.jenisNama} ${k.kode}`,satuan:jk?.satuan||"pcs",kategori:k.kategori||"Kain",stok:k.sisa,harga:jk?.harga||0};}), [aktif,jenis]);
   const cats=useMemo(()=>["Semua",...new Set(allPickable.map(i=>i.kategori))],[allPickable]);
   const filtered=useMemo(()=>{let l=allPickable;if(search)l=l.filter(i=>i.nama.toLowerCase().includes(search.toLowerCase()));if(catFilter!=="Semua")l=l.filter(i=>i.kategori===catFilter);return l;},[allPickable,search,catFilter]);
-  const toggle=useCallback(item=>{setSelected(p=>{if(p[item.id]!==undefined){const{[item.id]:_,...r}=p;return r;}return{...p,[item.id]:"1"}; // string agar input bisa diedit bebas});},[]);
-  const updQty=(id,v)=>{setSelected(p=>({...p,[id]:v}));}; // izinkan string kosong saat mengetik
+  const toggle=useCallback(item=>{setSelected(p=>{if(p[item.id]!==undefined){const{[item.id]:_,...r}=p;return r;}return{...p,[item.id]:"1"};});},[]);
+  const updQty=(id,v)=>{setSelected(p=>({...p,[id]:v}));};
   const selItems=useMemo(()=>allPickable.filter(i=>selected[i.id]!==undefined),[allPickable,selected]);
   const hpp=useMemo(()=>selItems.reduce((s,i)=>s+(parseFloat(selected[i.id])||0)*i.harga,0),[selItems,selected]);
 

@@ -560,7 +560,7 @@ function DaftarPaket({pkgs,setPkgs,onView,showNotif,role}){
       </div>
       {paged.length===0?<div style={{textAlign:"center",padding:50,color:"#ccc"}}><div style={{fontSize:48}}>📋</div><div style={{marginTop:10}}>Tidak ada paket</div></div>
       :<><Tbl><TH cols={["Kode","Nama Paket","Customer","HPP","Tanggal","Status","Aksi"]}/><tbody>{paged.map(p=>(
-        <tr key={p.id}><TD><span style={{fontFamily:"monospace",fontSize:12,color:C.pri,fontWeight:700}}>{p.kode}</span></TD><TD><div style={{fontWeight:600}}>{p.nama}</div>{p.deskripsi&&<div style={{fontSize:11,color:"#aaa",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{p.deskripsi}</div>}</TD><TD>{p.customer||<span style={{color:"#ccc"}}>–</span>}</TD><TD><span style={{fontWeight:700,color:C.ok}}>{fmtRp(p.hpp)}</span></TD><TD style={{fontSize:12}}>{String(p.tanggal).split("T")[0]}</TD>
+        <tr key={p.id}><TD style={{whiteSpace:"nowrap"}}><span style={{fontFamily:"monospace",fontSize:11,color:C.pri,fontWeight:700,display:"block",cursor:"pointer"}} onClick={()=>{try{navigator.clipboard.writeText(p.kode);}catch(e){}}} title="Tap untuk copy">{p.kode}</span></TD><TD><div style={{fontWeight:600}}>{p.nama}</div>{p.deskripsi&&<div style={{fontSize:11,color:"#aaa",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{p.deskripsi}</div>}</TD><TD>{p.customer||<span style={{color:"#ccc"}}>–</span>}</TD><TD><span style={{fontWeight:700,color:C.ok}}>{fmtRp(p.hpp)}</span></TD><TD style={{fontSize:12}}>{String(p.tanggal).split("T")[0]}</TD>
         <TD><Badge label={p.status==="selesai"?"✅ Selesai":"⏳ Pending"} color={p.status==="selesai"?C.ok:C.warn}/></TD>
         <TD><div style={{display:"flex",gap:6}}><Ghost onClick={()=>onView(p)} style={{padding:"5px 10px",fontSize:12}}>👁️</Ghost>{canEdit&&<Ghost onClick={()=>hapus(p)} style={{padding:"5px 10px",fontSize:12,color:C.err}}>🗑️</Ghost>}</div></TD>
         </tr>
@@ -586,9 +586,17 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
       const orderQty=found.items.reduce((s,i)=>s+(parseFloat(i.qty)||0),0);
       await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,qty:parseFloat(orderQty.toFixed(3)),satuan:"item",tanggal:jakartaTime()}});
       addTrx("outbound",detail);
+      // Update state lokal langsung (instant, tidak perlu reload semua data)
+      setStokVarian(p=>p.map(k=>{
+        const ki=found.items.find(i=>String(i.ref_id||i.refId)===String(k.id));
+        if(!ki)return k;
+        const newSisa=parseFloat(Math.max(0,k.sisa-ki.qty).toFixed(3));
+        const autoArsip=newSisa<=0&&k.kategori==="Kain";
+        return{...k,sisa:newSisa,status:autoArsip?"arsip":"aktif"};
+      }));
+      setPkgs(p=>p.map(x=>x.id===found.id?{...x,status:"selesai"}:x));
       showNotif(`✅ Order ${found.kode} berhasil diproses!`);
       setFound(null);setInput("");
-      if(onReload)await onReload();
     }catch(e){showNotif("Gagal: "+e.message,"err");}
     setSaving(false);
   };
@@ -931,6 +939,19 @@ function App(){
 
   useEffect(()=>{const sr=sessionStorage.getItem("tarda_role"),sa=sessionStorage.getItem("tarda_api");if(sr&&sa){API=sa;setRole(sr);}},[]);
   useEffect(()=>{if(role)loadAll();},[role]);
+
+  // Auto-refresh background tiap 30 detik — sync antar device
+  useEffect(()=>{
+    if(!role)return;
+    const id=setInterval(async()=>{
+      try{
+        const d=await apGet();
+        const s=toState(d);
+        setJenis(s.jenis);setStokVarian(s.stokVarian);setPkgs(s.pkgs);setTrxs(s.trxs);
+      }catch(e){} // silent fail - tidak tampilkan error
+    },30000); // 30 detik
+    return()=>clearInterval(id);
+  },[role]);
 
   const doLogout=()=>{sessionStorage.removeItem("tarda_role");sessionStorage.removeItem("tarda_api");setRole(null);setJenis([]);setStokVarian([]);setPkgs([]);setTrxs([]);};
 

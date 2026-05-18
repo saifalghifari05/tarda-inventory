@@ -48,8 +48,10 @@ const jakartaTime = () => {
 const toNum = v => parseFloat(v) || 0;
 const genKode = pkgs => {
   const d=new Date(),dd=String(d.getDate()).padStart(2,"0"),mm=String(d.getMonth()+1).padStart(2,"0");
-  const cnt = pkgs.filter(p=>p.tanggal&&p.tanggal.startsWith(`${d.getFullYear()}-${mm}-${dd}`)).length;
-  return `PKT-${dd}${mm}${d.getFullYear()}-${String(cnt+1).padStart(3,"0")}`;
+  const prefix=`PKT-${dd}${mm}${d.getFullYear()}-`;
+  // Filter by kode prefix (always string) — bukan tanggal yang bisa jadi Date object dari GAS
+  const cnt=pkgs.filter(p=>p.kode&&String(p.kode).startsWith(prefix)).length;
+  return `${prefix}${String(cnt+1).padStart(3,"0")}`;
 };
 
 // ─── MOBILE DETECTION ────────────────────────────────────

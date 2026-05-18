@@ -37,6 +37,14 @@ const fmt   = n => new Intl.NumberFormat("id-ID").format(n);
 const fmtRp = n => "Rp " + fmt(n);
 const genId = () => Date.now().toString(36) + Math.random().toString(36).slice(2,5);
 const today = () => new Date().toISOString().split("T")[0];
+
+// Timestamp Jakarta (WIB, UTC+7) — format: 18/05/2026 13:50:25
+const jakartaTime = () => {
+  const d = new Date();
+  const j = new Date(d.toLocaleString("en-US", {timeZone:"Asia/Jakarta"}));
+  const p = n => String(n).padStart(2,"0");
+  return `${p(j.getDate())}/${p(j.getMonth()+1)}/${j.getFullYear()} ${p(j.getHours())}:${p(j.getMinutes())}:${p(j.getSeconds())}`;
+};
 const toNum = v => parseFloat(v) || 0;
 const genKode = pkgs => {
   const d=new Date(),dd=String(d.getDate()).padStart(2,"0"),mm=String(d.getMonth()+1).padStart(2,"0");
@@ -412,7 +420,7 @@ function StokVarian({jenis,stokVarian,setStokVarian,showNotif,addTrx,role}){
     const customer=isKain&&f.tipe==="potongan"?f.customer:"";
     const payload={id,kode,jenis_id:f.jenisId,jenis_nama:jk.nama,kode_prefix:jk.kodePrefix||"",warna:f.kodeVar.trim().toUpperCase(),tipe:isKain?f.tipe:"standard",qty:Number(qty),sisa:Number(qty),customer,tanggal:f.tanggal,status:"aktif",kategori:activeKat}; // status selalu aktif saat tambah baru
     const stLocal={id,kode,jenisId:f.jenisId,jenisNama:jk.nama,kodePrefix:jk.kodePrefix||"",warna:f.kodeVar.trim().toUpperCase(),tipe:isKain?f.tipe:"standard",qty,sisa:qty,customer,tanggal:f.tanggal,status:"aktif",kategori:activeKat};
-    const trx={id:genId(),type:"inbound",detail:`${kode} · ${qty} ${satuanLabel}${customer?" ("+customer+")":""}`,qty:qty,satuan:satuanLabel,tanggal:new Date().toISOString()};
+    const trx={id:genId(),type:"inbound",detail:`${kode} · ${qty} ${satuanLabel}${customer?" ("+customer+")":""}`,qty:qty,satuan:satuanLabel,tanggal:jakartaTime()};
     setSaving(true);
     try{await apPost({action:"saveStokVarian",payload});await apPost({action:"saveTransaksi",payload:trx});setStokVarian(p=>[...p,stLocal]);addTrx("inbound",trx.detail);showNotif(`${activeKat} ${kode} berhasil ditambah!`);setModal(false);}
     catch(e){showNotif("Gagal: "+e.message,"err");}
@@ -568,7 +576,7 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
       if(res&&res.log){const failed=res.log.filter(l=>l.includes("NOT FOUND")||l.includes("SKIP"));if(failed.length>0){setDebugInfo({log:res.log,failed});showNotif("⚠️ Ada stok tidak ditemukan! Lihat debug di bawah.","err");setSaving(false);return;}}
       const detail=`${found.nama} · ${found.kode}`;
       const orderQty=found.items.reduce((s,i)=>s+(parseFloat(i.qty)||0),0);
-      await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,qty:parseFloat(orderQty.toFixed(3)),satuan:"item",tanggal:new Date().toISOString()}});
+      await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,qty:parseFloat(orderQty.toFixed(3)),satuan:"item",tanggal:jakartaTime()}});
       addTrx("outbound",detail);
       showNotif(`✅ Order ${found.kode} berhasil diproses!`);
       setFound(null);setInput("");
@@ -642,7 +650,7 @@ function BulkOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif}){
         setStokVarian(p=>p.map(x=>x.id===k.id?{...x,sisa:newSisa,status:newStatus}:x));
       }
       const detail="Finishing: "+selectedItems.map(k=>`${k.kode} ×${qtys[k.id]}`).join(", ");
-      const totalQty=selectedItems.reduce((s,k)=>s+parseFloat(qtys[k.id]||0),0);await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,qty:totalQty,satuan:"pcs",tanggal:new Date().toISOString()}});
+      const totalQty=selectedItems.reduce((s,k)=>s+parseFloat(qtys[k.id]||0),0);await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,qty:totalQty,satuan:"pcs",tanggal:jakartaTime()}});
       addTrx("outbound",detail);
       showNotif(`✅ ${selectedItems.length} item berhasil dioutbound!`);
       setQtys({});
@@ -723,7 +731,7 @@ function InboundOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif,role})
     const sat=selJK?.satuan||"pcs";
     const detail=`${selVarian?.kode} · ${q} ${sat}${tab==="outbound"?" (cacat/rusak)":""}${vf.ket?" — "+vf.ket:""}`;
     setSaving(true);
-    try{await apPost({action:"patchStokVarian",id:selVarian.id,fields:{sisa:newSisa,status:newStatus}});await apPost({action:"saveTransaksi",payload:{id:genId(),type:tab,detail,qty:q,satuan:sat,tanggal:new Date().toISOString()}});setStokVarian(p=>p.map(k=>k.id===selVarian.id?{...k,sisa:newSisa,status:newStatus}:k));addTrx(tab,detail);showNotif(`✅ ${selVarian.kode} ${tab==="inbound"?"+":"-"}${q} ${sat}`);setVF(x=>({...x,qty:"",ket:""}));}
+    try{await apPost({action:"patchStokVarian",id:selVarian.id,fields:{sisa:newSisa,status:newStatus}});await apPost({action:"saveTransaksi",payload:{id:genId(),type:tab,detail,qty:q,satuan:sat,tanggal:jakartaTime()}});setStokVarian(p=>p.map(k=>k.id===selVarian.id?{...k,sisa:newSisa,status:newStatus}:k));addTrx(tab,detail);showNotif(`✅ ${selVarian.kode} ${tab==="inbound"?"+":"-"}${q} ${sat}`);setVF(x=>({...x,qty:"",ket:""}));}
     catch(e){showNotif("Gagal: "+e.message,"err");}
     setSaving(false);
   };
@@ -808,7 +816,14 @@ function InboundOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif,role})
 function Riwayat({trxs}){
   const [pg,setPg]=useState(1);const [filter,setFilter]=useState("all");const PS=15;
   const list=filter==="all"?trxs:trxs.filter(t=>t.type===filter);const paged=list.slice((pg-1)*PS,pg*PS);
-  const fmtDt=iso=>new Date(iso).toLocaleString("id-ID",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+  const fmtDt = ts => {
+  if (!ts) return "–";
+  // Format baru: "18/05/2026 13:50:25" — tampilkan langsung
+  if (typeof ts === "string" && ts.includes("/")) return ts.slice(0,16); // hapus detik
+  // Format lama: ISO UTC — convert ke Jakarta
+  try { return new Date(ts).toLocaleString("id-ID",{timeZone:"Asia/Jakarta",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit",hour12:false}); }
+  catch { return String(ts); }
+};
   return(<Card><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{fontWeight:700,fontSize:14,color:C.pri}}>📜 Riwayat Transaksi</div><select value={filter} onChange={e=>{setFilter(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"8px 12px",fontSize:13}}><option value="all">Semua</option><option value="inbound">Inbound</option><option value="outbound">Outbound</option></select></div>{paged.length===0?<div style={{textAlign:"center",padding:40,color:"#ccc"}}>Belum ada transaksi</div>:<><Tbl><TH cols={["Waktu","Tipe","Qty","Keterangan"]}/><tbody>{paged.map(t=><tr key={t.id}><TD style={{whiteSpace:"nowrap",fontSize:12}}>{fmtDt(t.tanggal)}</TD><TD><Badge label={t.type} color={t.type==="inbound"?C.ok:C.warn}/></TD><TD style={{whiteSpace:"nowrap",fontWeight:600,color:t.type==="inbound"?C.ok:C.warn}}>{t.qty!==undefined&&t.qty!==""?`${t.type==="inbound"?"+":"-"}${toNum(t.qty)} ${t.satuan||""}`:"-"}</TD><TD>{t.detail}</TD></tr>)}</tbody></Tbl><Pg page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/></> }</Card>);
 }
 
@@ -897,7 +912,7 @@ function App(){
   const navTo = (id) => { setPage(id); if(isMobile) setSidebar(false); };
 
   const showNotif=useCallback((m,t="ok")=>{setNotif({m,t});setTimeout(()=>setNotif(null),3500);},[]);
-  const addTrx=useCallback((type,detail)=>setTrxs(p=>[{id:genId(),type,detail,tanggal:new Date().toISOString()},...p]),[]);
+  const addTrx=useCallback((type,detail)=>setTrxs(p=>[{id:genId(),type,detail,tanggal:jakartaTime()},...p]),[]);
 
   const loadAll=useCallback(async()=>{
     setLoading(true);setLoadErr(null);

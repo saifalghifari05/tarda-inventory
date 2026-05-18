@@ -402,7 +402,8 @@ function StokVarian({jenis,stokVarian,setStokVarian,showNotif,addTrx,role}){
   const jenisForKat=jenis.filter(j=>(j.kategori||"Kain")===activeKat);
   const selJenis=jenis.find(j=>j.id===f.jenisId);
   const prefix=selJenis?.kodePrefix||"";
-  const kodePreview=selJenis&&f.kodeVar?(prefix?`${prefix}-${f.kodeVar.toUpperCase()}`:f.kodeVar.toUpperCase()):"–";
+  const kodeVar_=f.kodeVar.trim().toUpperCase();
+  const kodePreview=selJenis?(prefix?(kodeVar_?`${prefix}-${kodeVar_}`:prefix):(kodeVar_||"–")):"–";
   const isKain=activeKat==="Kain";
 
   const list=useMemo(()=>{let l=aktif.filter(k=>(k.kategori||"Kain")===activeKat);if(search)l=l.filter(k=>k.kode.toLowerCase().includes(search.toLowerCase())||(k.customer||"").toLowerCase().includes(search.toLowerCase())||k.jenisNama.toLowerCase().includes(search.toLowerCase()));return l;},[aktif,activeKat,search]);
@@ -411,10 +412,15 @@ function StokVarian({jenis,stokVarian,setStokVarian,showNotif,addTrx,role}){
   const openModal=()=>{setF({jenisId:jenisForKat[0]?.id||"",kodeVar:"",tipe:"roll",qty:"",customer:"",tanggal:today()});setModal(true);};
 
   const save=async()=>{
-    if(!f.jenisId||!f.kodeVar||!f.qty)return showNotif("Lengkapi semua field!","err");
+    if(!f.jenisId||!f.qty)return showNotif("Lengkapi semua field!","err");
+    // kodeVar wajib hanya jika tidak ada prefix
+    if(!prefix&&!f.kodeVar.trim())return showNotif("Kode Varian wajib jika jenis tidak punya prefix!","err");
     if(isKain&&f.tipe==="potongan"&&!f.customer)return showNotif("Customer wajib!","err");
     const jk=jenis.find(j=>j.id===f.jenisId);
-    const kode=prefix?`${prefix}-${f.kodeVar.trim().toUpperCase()}`:f.kodeVar.trim().toUpperCase();
+    const kodeVar=f.kodeVar.trim().toUpperCase();
+    // Jika kodeVar kosong dan ada prefix → pakai prefix saja
+    // Jika kodeVar diisi dan ada prefix → prefix-kodeVar
+    const kode=prefix?(kodeVar?`${prefix}-${kodeVar}`:prefix):kodeVar;
     if(stokVarian.find(k=>k.kode===kode&&k.status==="aktif"&&(k.kategori||"Kain")===activeKat))return showNotif(`Kode ${kode} sudah aktif!`,"err");
     const id=genId();const qty=parseFloat(f.qty);
     const customer=isKain&&f.tipe==="potongan"?f.customer:"";
@@ -471,7 +477,7 @@ function StokVarian({jenis,stokVarian,setStokVarian,showNotif,addTrx,role}){
               {jenisForKat.map(j=><option key={j.id} value={j.id}>{j.nama} — {fmtRp(j.harga)}/{j.satuan}</option>)}
             </select>
           </div>
-          <Inp label="Kode Varian *" value={f.kodeVar} onChange={v=>setF(x=>({...x,kodeVar:v.toUpperCase()}))} placeholder={isKain?"024 / NAVY":"HTM-PJG"} note="Otomatis huruf kapital"/>
+          <Inp label="Kode Varian *" value={f.kodeVar} onChange={v=>setF(x=>({...x,kodeVar:v.toUpperCase()}))} placeholder={isKain?"024 / NAVY":"HTM-PJG"} note={prefix?"Opsional — kosongkan untuk pakai prefix saja. Otomatis kapital.":"Wajib diisi. Otomatis kapital."}/>
           <div style={{background:"#f0f4ff",borderRadius:8,padding:"10px 14px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}><div style={{fontSize:12,color:"#555"}}>Kode lengkap:</div><div style={{fontFamily:"monospace",fontSize:16,fontWeight:700,color:C.pri}}>{kodePreview}</div></div>
           {isKain&&<div style={{marginBottom:12}}><label style={{fontSize:12,color:"#555",marginBottom:6,display:"block",fontWeight:600}}>Tipe *</label><div style={{display:"flex",gap:8}}>{["roll","potongan"].map(t=><button key={t} onClick={()=>setF(x=>({...x,tipe:t,customer:""}))} style={{flex:1,padding:10,borderRadius:8,border:`2px solid ${f.tipe===t?C.pri:"#ddd"}`,background:f.tipe===t?C.pri+"15":"#fff",color:f.tipe===t?C.pri:"#333",fontWeight:600,cursor:"pointer",fontSize:13}}>{t==="roll"?"🎞️ Roll":"✂️ Potongan"}</button>)}</div></div>}
           <Inp label={`Jumlah (${satuanLabel}) *`} type="number" value={f.qty} onChange={v=>setF(x=>({...x,qty:v}))} placeholder="100" min="0.1" step={isKain?"0.1":"1"}/>

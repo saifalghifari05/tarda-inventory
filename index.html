@@ -511,9 +511,23 @@ function BuatPaket({jenis,stokVarian,pkgs,setPkgs,showNotif}){
     if(!nama)return showNotif("Isi nama paket!","err");if(selItems.length===0)return showNotif("Pilih minimal 1 item!","err");
     const invalidQty=selItems.filter(i=>!(parseFloat(selected[i.id])>0));
     if(invalidQty.length>0)return showNotif(`Isi jumlah yang valid untuk: ${invalidQty.map(i=>i.nama.split(" ").slice(-1)[0]).join(", ")}!`,"err");
-    const kode=genKode(pkgs);const paket={id:genId(),kode,nama,customer,deskripsi,hpp,tanggal:today(),status:"pending"};
-    const items=selItems.map(i=>({id:genId(),paket_id:paket.id,type:i.type,ref_id:i.id,nama:i.nama,qty:parseFloat(selected[i.id])||0,satuan:i.satuan,harga:i.harga}));
-    setSaving(true);try{await apPost({action:"savePaket",paket,items});setPkgs(p=>[{...paket,items},...p]);showNotif(`✅ Paket ${kode} berhasil!`);setNama("");setCustomer("");setDeskripsi("");setSelected({});}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);
+    setSaving(true);
+    try{
+      // Ambil kode dari GAS — dijamin unik lintas device/session
+      let kode=genKode(pkgs); // fallback default
+      try{
+        const kr=await fetch(API+"?action=getNextKode",{redirect:"follow"});
+        const kj=JSON.parse(await kr.text());
+        if(kj.success)kode=kj.data;
+      }catch(e){}
+      const paket={id:genId(),kode,nama,customer,deskripsi,hpp,tanggal:today(),status:"pending"};
+      const items=selItems.map(i=>({id:genId(),paket_id:paket.id,type:i.type,ref_id:i.id,nama:i.nama,qty:parseFloat(selected[i.id])||0,satuan:i.satuan,harga:i.harga}));
+      await apPost({action:"savePaket",paket,items});
+      setPkgs(p=>[{...paket,items},...p]);
+      showNotif(`✅ Paket ${kode} berhasil!`);
+      setNama("");setCustomer("");setDeskripsi("");setSelected({});
+    }catch(e){showNotif("Gagal: "+e.message,"err");}
+    setSaving(false);
   };
 
   return(<div style={{maxWidth:720,margin:"0 auto",width:"100%"}}>

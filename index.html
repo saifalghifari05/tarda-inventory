@@ -500,15 +500,17 @@ function BuatPaket({jenis,stokVarian,pkgs,setPkgs,showNotif}){
   const allPickable=useMemo(()=>aktif.map(k=>{const jk=jenis.find(j=>j.id===k.jenisId);return{id:k.id,type:"varian",nama:`${k.jenisNama} ${k.kode}`,satuan:jk?.satuan||"pcs",kategori:k.kategori||"Kain",stok:k.sisa,harga:jk?.harga||0};}), [aktif,jenis]);
   const cats=useMemo(()=>["Semua",...new Set(allPickable.map(i=>i.kategori))],[allPickable]);
   const filtered=useMemo(()=>{let l=allPickable;if(search)l=l.filter(i=>i.nama.toLowerCase().includes(search.toLowerCase()));if(catFilter!=="Semua")l=l.filter(i=>i.kategori===catFilter);return l;},[allPickable,search,catFilter]);
-  const toggle=useCallback(item=>{setSelected(p=>{if(p[item.id]!==undefined){const{[item.id]:_,...r}=p;return r;}return{...p,[item.id]:1};});},[]);
-  const updQty=(id,v)=>{const n=parseFloat(v);if(n>0)setSelected(p=>({...p,[id]:n}));};
+  const toggle=useCallback(item=>{setSelected(p=>{if(p[item.id]!==undefined){const{[item.id]:_,...r}=p;return r;}return{...p,[item.id]:"1"}; // string agar input bisa diedit bebas});},[]);
+  const updQty=(id,v)=>{setSelected(p=>({...p,[id]:v}));}; // izinkan string kosong saat mengetik
   const selItems=useMemo(()=>allPickable.filter(i=>selected[i.id]!==undefined),[allPickable,selected]);
-  const hpp=useMemo(()=>selItems.reduce((s,i)=>s+(selected[i.id]||0)*i.harga,0),[selItems,selected]);
+  const hpp=useMemo(()=>selItems.reduce((s,i)=>s+(parseFloat(selected[i.id])||0)*i.harga,0),[selItems,selected]);
 
   const save=async()=>{
     if(!nama)return showNotif("Isi nama paket!","err");if(selItems.length===0)return showNotif("Pilih minimal 1 item!","err");
+    const invalidQty=selItems.filter(i=>!(parseFloat(selected[i.id])>0));
+    if(invalidQty.length>0)return showNotif(`Isi jumlah yang valid untuk: ${invalidQty.map(i=>i.nama.split(" ").slice(-1)[0]).join(", ")}!`,"err");
     const kode=genKode(pkgs);const paket={id:genId(),kode,nama,customer,deskripsi,hpp,tanggal:today(),status:"pending"};
-    const items=selItems.map(i=>({id:genId(),paket_id:paket.id,type:i.type,ref_id:i.id,nama:i.nama,qty:selected[i.id],satuan:i.satuan,harga:i.harga}));
+    const items=selItems.map(i=>({id:genId(),paket_id:paket.id,type:i.type,ref_id:i.id,nama:i.nama,qty:parseFloat(selected[i.id])||0,satuan:i.satuan,harga:i.harga}));
     setSaving(true);try{await apPost({action:"savePaket",paket,items});setPkgs(p=>[{...paket,items},...p]);showNotif(`✅ Paket ${kode} berhasil!`);setNama("");setCustomer("");setDeskripsi("");setSelected({});}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);
   };
 

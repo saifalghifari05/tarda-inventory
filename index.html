@@ -586,9 +586,10 @@ function DaftarPaket({pkgs,setPkgs,onView,showNotif,role}){
 }
 
 // ─── MENU ORDER ──────────────────────────────────────────
-function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onReload,apiUrl}){
+function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onReload,apiUrl,role}){
   const [input,setInput]=useState("");const [found,setFound]=useState(null);const [notFound,setNotFound]=useState(false);
   const [saving,setSaving]=useState(false);const [debugInfo,setDebugInfo]=useState(null);const [debugLoading,setDebugLoading]=useState(false);
+  const [forceLoading,setForceLoading]=useState(false);
 
   const doSearch=()=>{const p=pkgs.find(x=>x.kode===input.trim());if(p){setFound(p);setNotFound(false);setDebugInfo(null);}else{setFound(null);setNotFound(true);}};
 
@@ -617,6 +618,28 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
     setSaving(false);
   };
 
+  const forceDeduct=async()=>{
+    if(!confirm(`Potong stok untuk ${found.kode}? Pastikan stok belum terpotong.`))return;
+    setForceLoading(true);setDebugInfo(null);
+    try{
+      const res=await apPost({action:"forceDeductStok",paketId:found.id});
+      console.log("forceDeduct:",res);
+      if(res&&res.log){setDebugInfo({log:res.log});}
+      if(res&&res.allProcessed){
+        const detail=`${found.nama} · ${found.kode} (koreksi stok)`;
+        const orderQty=found.items.reduce((s,i)=>s+(parseFloat(i.qty)||0),0);
+        await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,qty:parseFloat(orderQty.toFixed(3)),satuan:"item",tanggal:jakartaTime()}});
+        addTrx("outbound",detail);
+        if(onReload)await onReload();
+        showNotif(`✅ Stok berhasil dipotong untuk ${found.kode}`);
+        setFound(null);setInput("");
+      }else{
+        showNotif("⚠️ Ada item tidak ditemukan, lihat debug di bawah","err");
+      }
+    }catch(e){showNotif("Gagal: "+e.message,"err");}
+    setForceLoading(false);
+  };
+
   const runDebug=async()=>{
     if(!found)return;setDebugLoading(true);
     try{const r=await fetch(`${apiUrl}?action=debugPaket&paketId=${found.id}`,{redirect:"follow"});const j=JSON.parse(await r.text());setDebugInfo(j.data||j);}
@@ -635,7 +658,10 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
       {found.items.map((it,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f5f5f5",fontSize:13}}><span>{it.nama}</span><span style={{fontWeight:600}}>{it.qty} {it.satuan}</span></div>)}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:"2px solid #eee",marginTop:6}}><span style={{fontWeight:700}}>Total HPP</span><span style={{fontWeight:700,fontSize:18,color:C.ok}}>{fmtRp(found.hpp)}</span></div>
       {found.status==="selesai"
-        ?<div style={{marginTop:10,padding:12,background:"#e8f5e9",borderRadius:8,color:C.ok,textAlign:"center",fontSize:13}}>✅ Paket ini sudah diproses</div>
+        ?<div style={{marginTop:10}}>
+            <div style={{padding:12,background:"#e8f5e9",borderRadius:8,color:C.ok,textAlign:"center",fontSize:13,marginBottom:8}}>✅ Paket ini sudah diproses</div>
+            {role==="owner"&&<Btn onClick={forceDeduct} loading={forceLoading} bg={C.warn} style={{width:"100%",fontSize:13,padding:"10px"}}>🔧 Koreksi Stok (jika stok belum terpotong)</Btn>}
+          </div>
         :<Btn onClick={process} loading={saving} bg={C.ok} style={{width:"100%",marginTop:14,padding:"13px",fontSize:15}}>✅ Konfirmasi & Keluarkan Stok</Btn>
       }
       <Ghost onClick={runDebug} style={{width:"100%",marginTop:8,fontSize:12,color:"#888"}}>{debugLoading?"🔍 Memeriksa...":"🔍 Debug: Cek Stok Matching"}</Ghost>
@@ -985,7 +1011,7 @@ function App(){
     case "stok-varian":  return <StokVarian jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} showNotif={showNotif} addTrx={addTrx} role={role}/>;
     case "buat-paket":   return <BuatPaket jenis={jenis} stokVarian={stokVarian} pkgs={pkgs} setPkgs={setPkgs} showNotif={showNotif}/>;
     case "daftar-paket": return <DaftarPaket pkgs={pkgs} setPkgs={setPkgs} onView={setViewPaket} showNotif={showNotif} role={role}/>;
-    case "menu-order":   return <MenuOrder pkgs={pkgs} setPkgs={setPkgs} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif} onReload={loadAll} apiUrl={API}/>;
+    case "menu-order":   return <MenuOrder pkgs={pkgs} setPkgs={setPkgs} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif} onReload={loadAll} apiUrl={API} role={role}/>;
     case "inbound":      return <InboundOutbound jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif} role={role}/>;
     case "riwayat":      return <Riwayat trxs={trxs}/>;
     case "rekap":        return <RekapBulanan trxs={trxs} showNotif={showNotif}/>;

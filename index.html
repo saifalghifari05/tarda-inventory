@@ -590,6 +590,8 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
   const [input,setInput]=useState("");const [found,setFound]=useState(null);const [notFound,setNotFound]=useState(false);
   const [saving,setSaving]=useState(false);const [debugInfo,setDebugInfo]=useState(null);const [debugLoading,setDebugLoading]=useState(false);
   const [forceLoading,setForceLoading]=useState(false);
+  const [forceModal,setForceModal]=useState(false);
+  const [forceSelected,setForceSelected]=useState({});
 
   const doSearch=()=>{const p=pkgs.find(x=>x.kode===input.trim());if(p){setFound(p);setNotFound(false);setDebugInfo(null);}else{setFound(null);setNotFound(true);}};
 
@@ -619,22 +621,23 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
   };
 
   const forceDeduct=async()=>{
-    if(!confirm(`Potong stok untuk ${found.kode}? Pastikan stok belum terpotong.`))return;
-    setForceLoading(true);setDebugInfo(null);
+    const selectedItems=found.items.filter(i=>forceSelected[i.id]);
+    if(selectedItems.length===0)return showNotif("Pilih minimal 1 item!","err");
+    setForceLoading(true);
     try{
-      const res=await apPost({action:"forceDeductStok",paketId:found.id});
-      console.log("forceDeduct:",res);
-      if(res&&res.log){setDebugInfo({log:res.log});}
-      if(res&&res.allProcessed){
+      const res=await apPost({action:"processOrder",paketId:found.id,items:selectedItems});
+      if(res&&res.log)setDebugInfo({log:res.log});
+      const failed=(res?.log||[]).filter(l=>l.includes("NOT FOUND"));
+      if(failed.length>0){
+        showNotif("⚠️ "+failed.length+" item tidak ditemukan, lihat debug","err");
+      }else{
         const detail=`${found.nama} · ${found.kode} (koreksi stok)`;
-        const orderQty=found.items.reduce((s,i)=>s+(parseFloat(i.qty)||0),0);
-        await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,qty:parseFloat(orderQty.toFixed(3)),satuan:"item",tanggal:jakartaTime()}});
+        const qty=selectedItems.reduce((s,i)=>s+(parseFloat(i.qty)||0),0);
+        await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,qty:parseFloat(qty.toFixed(3)),satuan:"item",tanggal:jakartaTime()}});
         addTrx("outbound",detail);
         if(onReload)await onReload();
-        showNotif(`✅ Stok berhasil dipotong untuk ${found.kode}`);
-        setFound(null);setInput("");
-      }else{
-        showNotif("⚠️ Ada item tidak ditemukan, lihat debug di bawah","err");
+        showNotif(`✅ Koreksi berhasil — ${selectedItems.length} item stok dipotong`);
+        setForceModal(false);setFound(null);setInput("");
       }
     }catch(e){showNotif("Gagal: "+e.message,"err");}
     setForceLoading(false);
@@ -660,12 +663,38 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
       {found.status==="selesai"
         ?<div style={{marginTop:10}}>
             <div style={{padding:12,background:"#e8f5e9",borderRadius:8,color:C.ok,textAlign:"center",fontSize:13,marginBottom:8}}>✅ Paket ini sudah diproses</div>
-            {role==="owner"&&<Btn onClick={forceDeduct} loading={forceLoading} bg={C.warn} style={{width:"100%",fontSize:13,padding:"10px"}}>🔧 Koreksi Stok (jika stok belum terpotong)</Btn>}
+            {role==="owner"&&<Btn onClick={()=>{setForceSelected({});setForceModal(true);}} bg={C.warn} style={{width:"100%",fontSize:13,padding:"10px"}}>🔧 Koreksi Stok (pilih item)</Btn>}
           </div>
         :<Btn onClick={process} loading={saving} bg={C.ok} style={{width:"100%",marginTop:14,padding:"13px",fontSize:15}}>✅ Konfirmasi & Keluarkan Stok</Btn>
       }
       <Ghost onClick={runDebug} style={{width:"100%",marginTop:8,fontSize:12,color:"#888"}}>{debugLoading?"🔍 Memeriksa...":"🔍 Debug: Cek Stok Matching"}</Ghost>
     </Card>}
+    {/* Modal Koreksi Stok — pilih item yang perlu dipotong */}
+    {forceModal&&found&&<Modal title="🔧 Koreksi Stok" onClose={()=>setForceModal(false)} w={500}>
+      <div style={{background:"#fff3e0",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.warn}}>
+        ⚠️ Hanya centang item yang <b>belum terpotong</b>. Item yang sudah terpotong jangan dicentang agar tidak double-potong.
+      </div>
+      {found.items.map(it=>(
+        <div key={it.id} onClick={()=>setForceSelected(p=>({...p,[it.id]:!p[it.id]}))} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",marginBottom:6,borderRadius:8,border:`1px solid ${forceSelected[it.id]?C.warn:"#eee"}`,background:forceSelected[it.id]?"#fff8f0":"#fff",cursor:"pointer"}}>
+          <div style={{width:20,height:20,borderRadius:4,border:`2px solid ${forceSelected[it.id]?C.warn:"#ddd"}`,background:forceSelected[it.id]?C.warn:"#fff",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+            {forceSelected[it.id]&&<span style={{color:"#fff",fontSize:13,fontWeight:700}}>✓</span>}
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:600,fontSize:14}}>{it.nama}</div>
+            <div style={{fontSize:12,color:"#888",marginTop:2}}>{it.qty} {it.satuan} · {fmtRp(it.harga)}/{it.satuan}</div>
+          </div>
+        </div>
+      ))}
+      <div style={{marginTop:14,padding:"10px 14px",background:"#f9f9f9",borderRadius:8,fontSize:13,marginBottom:14}}>
+        <b>{Object.values(forceSelected).filter(Boolean).length}</b> item dipilih
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Ghost onClick={()=>setForceModal(false)}>Batal</Ghost>
+        <Btn onClick={forceDeduct} loading={forceLoading} bg={C.warn} disabled={!Object.values(forceSelected).some(Boolean)}>
+          🔧 Potong Stok Terpilih
+        </Btn>
+      </div>
+    </Modal>}
     {debugInfo&&<Card style={{marginTop:14,border:"2px solid "+C.warn}}>
       <div style={{fontWeight:700,fontSize:13,color:C.warn,marginBottom:10}}>🔍 Debug Info</div>
       {debugInfo.log&&<div style={{marginBottom:10}}>{debugInfo.log.map((l,i)=><div key={i} style={{fontSize:12,padding:"4px 8px",marginBottom:4,borderRadius:6,background:l.includes("OK")?"#e8f5e9":l.includes("NOT FOUND")||l.includes("SKIP")?"#fff3f3":"#f5f5f5",color:l.includes("OK")?C.ok:l.includes("NOT FOUND")||l.includes("SKIP")?C.err:"#555"}}>{l}</div>)}</div>}

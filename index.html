@@ -423,7 +423,10 @@ function StokVarian({jenis,stokVarian,setStokVarian,showNotif,addTrx,role}){
     // Jika kodeVar kosong dan ada prefix → pakai prefix saja
     // Jika kodeVar diisi dan ada prefix → prefix-kodeVar
     const kode=prefix?(kodeVar?`${prefix}-${kodeVar}`:prefix):kodeVar;
-    if(stokVarian.find(k=>k.kode===kode&&k.status==="aktif"&&(k.kategori||"Kain")===activeKat))return showNotif(`Kode ${kode} sudah aktif!`,"err");
+    // Roll kain & non-kain: kode harus unik (1 fisik = 1 kode)
+    // Potongan kain: boleh duplikat — banyak customer bisa punya warna yang sama
+    const isDuplikat = stokVarian.find(k=>k.kode===kode&&k.status==="aktif"&&(k.kategori||"Kain")===activeKat);
+    if(isDuplikat && !(isKain && f.tipe==="potongan")) return showNotif(`Kode ${kode} sudah aktif!`,"err");
     const id=genId();const qty=parseFloat(f.qty);
     const customer=isKain&&f.tipe==="potongan"?f.customer:"";
     const payload={id,kode,jenis_id:f.jenisId,jenis_nama:jk.nama,kode_prefix:jk.kodePrefix||"",warna:f.kodeVar.trim().toUpperCase(),tipe:isKain?f.tipe:"standard",qty:Number(qty),sisa:Number(qty),customer,tanggal:f.tanggal,status:"aktif",kategori:activeKat}; // status selalu aktif saat tambah baru
@@ -499,7 +502,7 @@ function BuatPaket({jenis,stokVarian,pkgs,setPkgs,showNotif}){
   const [search,setSearch]=useState("");const [catFilter,setCatFilter]=useState("Semua");
   const [selected,setSelected]=useState({});const [saving,setSaving]=useState(false);
 
-  const allPickable=useMemo(()=>aktif.map(k=>{const jk=jenis.find(j=>j.id===k.jenisId);return{id:k.id,type:"varian",nama:`${k.jenisNama} ${k.kode}`,satuan:jk?.satuan||"pcs",kategori:k.kategori||"Kain",stok:k.sisa,harga:jk?.harga||0};}), [aktif,jenis]);
+  const allPickable=useMemo(()=>aktif.map(k=>{const jk=jenis.find(j=>j.id===k.jenisId);return{id:k.id,type:"varian",nama:`${k.jenisNama} ${k.kode}`,satuan:jk?.satuan||"pcs",kategori:k.kategori||"Kain",stok:k.sisa,harga:jk?.harga||0,customer:k.customer||""};}), [aktif,jenis]);
   const cats=useMemo(()=>["Semua",...new Set(allPickable.map(i=>i.kategori))],[allPickable]);
   const filtered=useMemo(()=>{let l=allPickable;if(search)l=l.filter(i=>i.nama.toLowerCase().includes(search.toLowerCase()));if(catFilter!=="Semua")l=l.filter(i=>i.kategori===catFilter);return l;},[allPickable,search,catFilter]);
   const toggle=useCallback(item=>{setSelected(p=>{if(p[item.id]!==undefined){const{[item.id]:_,...r}=p;return r;}return{...p,[item.id]:"1"};});},[]);
@@ -540,7 +543,7 @@ function BuatPaket({jenis,stokVarian,pkgs,setPkgs,showNotif}){
         {filtered.length===0?<div style={{textAlign:"center",padding:24,color:"#aaa",fontSize:13}}>Tidak ada stok aktif</div>
         :filtered.map(item=>{const isSel=selected[item.id]!==undefined;return(
           <div key={item.id} onClick={()=>toggle(item)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 16px",cursor:"pointer",background:isSel?"#e8f5e9":"#fff",borderBottom:"1px solid #f5f5f5"}} onMouseEnter={e=>{if(!isSel)e.currentTarget.style.background="#f9f9f9";}} onMouseLeave={e=>{e.currentTarget.style.background=isSel?"#e8f5e9":"#fff";}}>
-            <div><div style={{fontWeight:600,fontSize:14}}>{item.nama}</div><div style={{fontSize:12,color:"#888",marginTop:2}}><Badge label={item.kategori} color={CAT_COLOR[item.kategori]||C.acc}/> Stok: {item.stok} {item.satuan} · {fmtRp(item.harga)}/{item.satuan}</div></div>
+            <div><div style={{fontWeight:600,fontSize:14}}>{item.nama}</div><div style={{fontSize:12,color:"#888",marginTop:2,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}><Badge label={item.kategori} color={CAT_COLOR[item.kategori]||C.acc}/> Stok: {item.stok} {item.satuan} · {fmtRp(item.harga)}/{item.satuan}{item.customer&&<span style={{background:"#e3f2fd",color:"#1565c0",padding:"2px 8px",borderRadius:10,fontSize:11,fontWeight:600}}>👤 {item.customer}</span>}</div></div>
             <div style={{color:isSel?C.ok:"#ddd",fontSize:24,fontWeight:700,width:32,textAlign:"center"}}>{isSel?"✓":"○"}</div>
           </div>
         );})}

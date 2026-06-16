@@ -73,7 +73,7 @@ const ALL_KAT = ["Kain","Benang","Resletting","Interlining","Kancing","Pin","Kab
 const NON_KAIN_KAT = ALL_KAT.filter(k=>k!=="Kain");
 const DEF_SATUAN = ["pcs","lembar","meter","cone","roll","yard"];
 
-const C = {pri:"#1a237e",sec:"#283593",acc:"#2196f3",ok:"#43a047",warn:"#fb8c00",err:"#e53935",bg:"#eef2f7"};
+const C = {pri:"#1a237e",sec:"#283593",acc:"#2196f3",ok:"#43a047",warn:"#fb8c00",err:"#e53935",bg:"#eef2f7",dis:"#1565c0"};
 const CAT_COLOR = {Kain:"#5c6bc0",Resletting:"#e53935",Benang:"#7b1fa2",Interlining:"#00897b",Kancing:"#f57f17",Pin:"#0277bd",Kabak:"#558b2f",Tarboosh:"#795548","Plastik Zipper":"#6d4c41",Hardbox:"#455a64",Mika:"#00838f",Kardus:"#8d6e63"};
 const CAT_ICON = {Kain:"🧵",Resletting:"🔗",Benang:"🧶",Interlining:"🪡",Kancing:"⚪",Pin:"📌",Kabak:"🔘",Tarboosh:"🪢","Plastik Zipper":"🛍️",Hardbox:"📫",Mika:"🔲",Kardus:"📦"};
 
@@ -496,15 +496,64 @@ function StokVarian({jenis,stokVarian,setStokVarian,showNotif,addTrx,role}){
 }
 
 // ─── BUAT PAKET ──────────────────────────────────────────
-function BuatPaket({jenis,stokVarian,pkgs,setPkgs,showNotif}){
+function BuatPaket({jenis,stokVarian,pkgs,setPkgs,showNotif,role}){
   const aktif=stokVarian.filter(k=>k.status==="aktif");
+  // ── Mode: buat baru atau tambah ke paket existing ─────
+  const [mode,setMode]=useState("new");
+  // ── State: Buat Baru ──────────────────────────────────
   const [nama,setNama]=useState("");const [customer,setCustomer]=useState("");const [deskripsi,setDeskripsi]=useState("");
   const [search,setSearch]=useState("");const [catFilter,setCatFilter]=useState("Semua");
   const [selected,setSelected]=useState({});const [saving,setSaving]=useState(false);
+  // ── State: Tambah ke Paket ────────────────────────────
+  const [appendSearch,setAppendSearch]=useState("");
+  const [appendTarget,setAppendTarget]=useState(null);
+  const [appendItemSearch,setAppendItemSearch]=useState("");
+  const [appendCatFilter,setAppendCatFilter]=useState("Semua");
+  const [appendSelected,setAppendSelected]=useState({});
+  const [appendSaving,setAppendSaving]=useState(false);
 
   const allPickable=useMemo(()=>aktif.map(k=>{const jk=jenis.find(j=>j.id===k.jenisId);return{id:k.id,type:"varian",nama:`${k.jenisNama} ${k.kode}`,satuan:jk?.satuan||"pcs",kategori:k.kategori||"Kain",stok:k.sisa,harga:jk?.harga||0,customer:k.customer||""};}), [aktif,jenis]);
   const cats=useMemo(()=>["Semua",...new Set(allPickable.map(i=>i.kategori))],[allPickable]);
   const filtered=useMemo(()=>{let l=allPickable;if(search)l=l.filter(i=>i.nama.toLowerCase().includes(search.toLowerCase()));if(catFilter!=="Semua")l=l.filter(i=>i.kategori===catFilter);return l;},[allPickable,search,catFilter]);
+
+  // Append: item yang bisa dipilih finishing (hanya FINISHING_CATS)
+  const appendPickable=useMemo(()=>{
+    let l=allPickable;
+    if(role==="finishing")l=l.filter(i=>FINISHING_CATS.includes(i.kategori));
+    if(appendItemSearch)l=l.filter(i=>i.nama.toLowerCase().includes(appendItemSearch.toLowerCase()));
+    if(appendCatFilter!=="Semua")l=l.filter(i=>i.kategori===appendCatFilter);
+    return l;
+  },[allPickable,role,appendItemSearch,appendCatFilter]);
+  const appendCats=useMemo(()=>["Semua",...new Set((role==="finishing"?allPickable.filter(i=>FINISHING_CATS.includes(i.kategori)):allPickable).map(i=>i.kategori))],[allPickable,role]);
+
+  // Paket yang bisa ditambahi (bukan selesai)
+  const appendablePkgs=useMemo(()=>{
+    let l=pkgs.filter(p=>p.status!=="selesai");
+    if(appendSearch)l=l.filter(p=>p.kode.toLowerCase().includes(appendSearch.toLowerCase())||p.nama.toLowerCase().includes(appendSearch.toLowerCase())||(p.customer||"").toLowerCase().includes(appendSearch.toLowerCase()));
+    return l;
+  },[pkgs,appendSearch]);
+
+  const appendToggle=useCallback(item=>{setAppendSelected(p=>{if(p[item.id]!==undefined){const{[item.id]:_,...r}=p;return r;}return{...p,[item.id]:"1"};});},[]);
+  const appendUpdQty=(id,v)=>{setAppendSelected(p=>({...p,[id]:v}));};
+  const appendSelItems=useMemo(()=>appendPickable.filter(i=>appendSelected[i.id]!==undefined),[appendPickable,appendSelected]);
+  const appendHpp=useMemo(()=>appendSelItems.reduce((s,i)=>s+(parseFloat(appendSelected[i.id])||0)*i.harga,0),[appendSelItems,appendSelected]);
+
+  const appendSave=async()=>{
+    if(!appendTarget)return showNotif("Pilih paket dulu!","err");
+    if(appendSelItems.length===0)return showNotif("Pilih minimal 1 item!","err");
+    const invalid=appendSelItems.filter(i=>!(parseFloat(appendSelected[i.id])>0));
+    if(invalid.length>0)return showNotif("Isi jumlah yang valid!","err");
+    setAppendSaving(true);
+    try{
+      const newItems=appendSelItems.map(i=>({id:genId(),paket_id:appendTarget.id,type:i.type,ref_id:i.id,nama:i.nama,qty:parseFloat(appendSelected[i.id])||0,satuan:i.satuan,harga:i.harga,kategori:i.kategori||""}));
+      const res=await apPost({action:"appendPaketItems",paketId:appendTarget.id,newItems});
+      const newHpp=res.hpp||appendTarget.hpp;
+      setPkgs(p=>p.map(x=>x.id!==appendTarget.id?x:{...x,hpp:newHpp,status:"disiapkan",items:[...x.items,...newItems]}));
+      showNotif(`✅ ${appendSelItems.length} item ditambahkan ke ${appendTarget.kode}! HPP: ${fmtRp(newHpp)}`);
+      setAppendTarget(null);setAppendSelected({});setAppendItemSearch("");
+    }catch(e){showNotif("Gagal: "+e.message,"err");}
+    setAppendSaving(false);
+  };
   const toggle=useCallback(item=>{setSelected(p=>{if(p[item.id]!==undefined){const{[item.id]:_,...r}=p;return r;}return{...p,[item.id]:"1"};});},[]);
   const updQty=(id,v)=>{setSelected(p=>({...p,[id]:v}));};
   const selItems=useMemo(()=>allPickable.filter(i=>selected[i.id]!==undefined),[allPickable,selected]);
@@ -524,7 +573,7 @@ function BuatPaket({jenis,stokVarian,pkgs,setPkgs,showNotif}){
         if(kj.success)kode=kj.data;
       }catch(e){}
       const paket={id:genId(),kode,nama,customer,deskripsi,hpp,tanggal:today(),status:"pending"};
-      const items=selItems.map(i=>({id:genId(),paket_id:paket.id,type:i.type,ref_id:i.id,nama:i.nama,qty:parseFloat(selected[i.id])||0,satuan:i.satuan,harga:i.harga}));
+      const items=selItems.map(i=>({id:genId(),paket_id:paket.id,type:i.type,ref_id:i.id,nama:i.nama,qty:parseFloat(selected[i.id])||0,satuan:i.satuan,harga:i.harga,kategori:i.kategori||""}));
       await apPost({action:"savePaket",paket,items});
       setPkgs(p=>[{...paket,items},...p]);
       showNotif(`✅ Paket ${kode} berhasil!`);
@@ -534,6 +583,75 @@ function BuatPaket({jenis,stokVarian,pkgs,setPkgs,showNotif}){
   };
 
   return(<div style={{maxWidth:720,margin:"0 auto",width:"100%"}}>
+    {/* Mode toggle */}
+    <div style={{display:"flex",gap:8,marginBottom:14}}>
+      {[{id:"new",icon:"✏️",label:"Buat Paket Baru"},{id:"append",icon:"➕",label:"Tambah ke Paket"}].map(m=>(
+        <button key={m.id} onClick={()=>{setMode(m.id);setAppendTarget(null);setAppendSelected({});}} style={{flex:1,padding:"11px 8px",borderRadius:10,border:`2px solid ${mode===m.id?C.pri:"#ddd"}`,background:mode===m.id?C.pri+"15":"#fff",color:mode===m.id?C.pri:"#555",fontWeight:700,cursor:"pointer",fontSize:13}}>{m.icon} {m.label}</button>
+      ))}
+    </div>
+
+    {/* ─── Mode: Tambah ke Paket ──────────────────────── */}
+    {mode==="append"&&<>
+      {!appendTarget
+        ?<Card>
+          <div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>Pilih Paket yang Akan Ditambah Item</div>
+          <input placeholder="🔍 Cari kode / nama / customer..." value={appendSearch} onChange={e=>setAppendSearch(e.target.value)} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%",boxSizing:"border-box",marginBottom:12}}/>
+          {appendablePkgs.length===0?<div style={{color:"#aaa",fontSize:13,textAlign:"center",padding:20}}>Tidak ada paket pending / disiapkan</div>
+          :appendablePkgs.map(p=>(
+            <div key={p.id} onClick={()=>setAppendTarget(p)} style={{padding:"12px 14px",borderRadius:8,border:"1px solid #eee",marginBottom:8,cursor:"pointer",background:"#fafafa"}} onMouseEnter={e=>e.currentTarget.style.background="#f0f4ff"} onMouseLeave={e=>e.currentTarget.style.background="#fafafa"}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <div><span style={{fontFamily:"monospace",color:C.pri,fontWeight:700,fontSize:13}}>{p.kode}</span> <span style={{fontWeight:600}}>{p.nama}</span></div>
+                <Badge label={p.status==="disiapkan"?"🔵 Disiapkan":"⏳ Pending"} color={p.status==="disiapkan"?C.dis:C.warn}/>
+              </div>
+              {p.customer&&<div style={{fontSize:12,color:"#888",marginTop:4}}>👤 {p.customer}</div>}
+              <div style={{fontSize:12,color:C.ok,marginTop:2}}>HPP saat ini: {fmtRp(p.hpp)}</div>
+            </div>
+          ))}
+        </Card>
+        :<>
+          <Card style={{marginBottom:12,background:"#f0f4ff",border:"1px solid "+C.pri}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div><span style={{fontFamily:"monospace",color:C.pri,fontWeight:700}}>{appendTarget.kode}</span> — <b>{appendTarget.nama}</b></div>
+              <Ghost onClick={()=>{setAppendTarget(null);setAppendSelected({});}} style={{padding:"5px 12px",fontSize:12}}>← Ganti</Ghost>
+            </div>
+            {appendTarget.customer&&<div style={{fontSize:12,color:"#888",marginTop:4}}>👤 {appendTarget.customer}</div>}
+            {appendTarget.items.length>0&&<div style={{marginTop:8,fontSize:12,color:"#555"}}>
+              <b>Item yang sudah ada:</b> {appendTarget.items.map(i=>i.nama.split(" ").pop()).join(", ")}
+            </div>}
+          </Card>
+          <Card style={{marginBottom:12}}>
+            <div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:10}}>
+              📦 Pilih Material {role==="finishing"?"Finishing":""}
+            </div>
+            <input placeholder="🔍 Cari item..." value={appendItemSearch} onChange={e=>setAppendItemSearch(e.target.value)} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:"100%",boxSizing:"border-box",marginBottom:10}}/>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>{appendCats.map(c=><button key={c} onClick={()=>setAppendCatFilter(c)} style={{padding:"5px 14px",borderRadius:20,border:"none",cursor:"pointer",fontSize:12,fontWeight:600,background:appendCatFilter===c?C.pri:"#f0f0f0",color:appendCatFilter===c?"#fff":"#555"}}>{c}</button>)}</div>
+            <div style={{maxHeight:280,overflowY:"auto",border:"1px solid #eee",borderRadius:8}}>
+              {appendPickable.length===0?<div style={{textAlign:"center",padding:24,color:"#aaa",fontSize:13}}>Tidak ada stok aktif</div>
+              :appendPickable.map(item=>{const isSel=appendSelected[item.id]!==undefined;return(
+                <div key={item.id} onClick={()=>appendToggle(item)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 16px",cursor:"pointer",background:isSel?"#e8f5e9":"#fff",borderBottom:"1px solid #f5f5f5"}}>
+                  <div><div style={{fontWeight:600,fontSize:14}}>{item.nama}</div><div style={{fontSize:12,color:"#888",marginTop:2}}><Badge label={item.kategori} color={CAT_COLOR[item.kategori]||C.acc}/> {item.stok} {item.satuan} · {fmtRp(item.harga)}/{item.satuan}</div></div>
+                  <div style={{color:isSel?C.ok:"#ddd",fontSize:24,fontWeight:700}}>{isSel?"✓":"○"}</div>
+                </div>
+              );})}
+            </div>
+          </Card>
+          {appendSelItems.length>0&&<Card>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}><div style={{fontWeight:700,fontSize:14,color:C.pri}}>ITEM DIPILIH ({appendSelItems.length})</div><Ghost onClick={()=>setAppendSelected({})} style={{padding:"5px 10px",fontSize:12,color:C.err}}>Bersihkan</Ghost></div>
+            {appendSelItems.map(i=><div key={i.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderBottom:"1px solid #f5f5f5"}}>
+              <div style={{flex:1,minWidth:0}}><div style={{fontWeight:600,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{i.nama}</div><div style={{fontSize:11,color:C.ok,marginTop:2}}>{fmtRp(i.harga)}/{i.satuan} = <b>{fmtRp((parseFloat(appendSelected[i.id])||0)*i.harga)}</b></div></div>
+              <input type="number" value={appendSelected[i.id]||""} onChange={e=>appendUpdQty(i.id,e.target.value)} min="0.1" step="0.1" style={{width:72,border:"1px solid #ddd",borderRadius:6,padding:"7px 8px",fontSize:14,textAlign:"center"}}/>
+              <span style={{fontSize:12,color:"#888",width:40}}>{i.satuan}</span>
+              <button onClick={()=>appendToggle(i)} style={{background:"none",border:"none",cursor:"pointer",color:C.err,fontSize:22}}>×</button>
+            </div>)}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:"2px solid #eee",marginTop:8}}><span style={{fontWeight:700}}>Tambahan HPP</span><span style={{fontWeight:800,fontSize:18,color:C.ok}}>+{fmtRp(appendHpp)}</span></div>
+            <div style={{fontSize:12,color:"#555",marginBottom:12,textAlign:"right"}}>HPP total setelah tambah: <b>{fmtRp((appendTarget.hpp||0)+appendHpp)}</b></div>
+            <Btn onClick={appendSave} loading={appendSaving} bg={C.dis} style={{width:"100%",padding:"13px",fontSize:15}}>➕ Tambahkan ke {appendTarget.kode}</Btn>
+          </Card>}
+        </>}
+    </>}
+
+    {/* ─── Mode: Buat Paket Baru ──────────────────────── */}
+    {mode==="new"&&<>
     <Card style={{marginBottom:14}}><div style={{fontWeight:700,fontSize:15,color:C.pri,marginBottom:16}}>✏️ Buat Template Paket Baru</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}><Inp label="Nama Paket *" value={nama} onChange={setNama} placeholder="Gamis Sulaiman"/><Inp label="Nama Customer" value={customer} onChange={setCustomer} placeholder="Ibu Sari"/></div><Inp label="Deskripsi (opsional)" value={deskripsi} onChange={setDeskripsi} placeholder="gamis lengan panjang warna hitam"/></Card>
     <Card style={{marginBottom:14}}>
       <div style={{fontWeight:700,fontSize:15,color:C.pri,marginBottom:12}}>📦 Pilih Stok</div>
@@ -560,6 +678,7 @@ function BuatPaket({jenis,stokVarian,pkgs,setPkgs,showNotif}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 0",borderTop:"2px solid #eee",marginTop:8}}><span style={{fontWeight:700,fontSize:15}}>Total HPP</span><span style={{fontWeight:800,fontSize:22,color:C.ok}}>{fmtRp(hpp)}</span></div>
       <Btn onClick={save} loading={saving} style={{width:"100%",padding:"13px",fontSize:15}}>💾 Simpan Paket</Btn>
     </Card>}
+    </>}
   </div>);
 }
 
@@ -575,12 +694,12 @@ function DaftarPaket({pkgs,setPkgs,onView,showNotif,role}){
     <Card>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,flexWrap:"wrap",gap:8}}>
         <input placeholder="🔍 Cari nama / kode / customer..." value={search} onChange={e=>{setSearch(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13,width:300}}/>
-        <select value={statusF} onChange={e=>{setStatusF(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13}}><option value="all">Semua Status</option><option value="pending">⏳ Pending</option><option value="selesai">✅ Selesai</option></select>
+        <select value={statusF} onChange={e=>{setStatusF(e.target.value);setPg(1);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13}}><option value="all">Semua Status</option><option value="pending">⏳ Pending</option><option value="disiapkan">🔵 Disiapkan</option><option value="selesai">✅ Selesai</option></select>
       </div>
       {paged.length===0?<div style={{textAlign:"center",padding:50,color:"#ccc"}}><div style={{fontSize:48}}>📋</div><div style={{marginTop:10}}>Tidak ada paket</div></div>
       :<><Tbl><TH cols={["Kode","Nama Paket","Customer","HPP","Tanggal","Status","Aksi"]}/><tbody>{paged.map(p=>(
         <tr key={p.id}><TD style={{whiteSpace:"nowrap"}}><span style={{fontFamily:"monospace",fontSize:11,color:C.pri,fontWeight:700,display:"block",cursor:"pointer"}} onClick={()=>{try{navigator.clipboard.writeText(p.kode);}catch(e){}}} title="Tap untuk copy">{p.kode}</span></TD><TD><div style={{fontWeight:600}}>{p.nama}</div>{p.deskripsi&&<div style={{fontSize:11,color:"#aaa",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:180}}>{p.deskripsi}</div>}</TD><TD>{p.customer||<span style={{color:"#ccc"}}>–</span>}</TD><TD><span style={{fontWeight:700,color:C.ok}}>{fmtRp(p.hpp)}</span></TD><TD style={{fontSize:12}}>{String(p.tanggal).split("T")[0]}</TD>
-        <TD><Badge label={p.status==="selesai"?"✅ Selesai":"⏳ Pending"} color={p.status==="selesai"?C.ok:C.warn}/></TD>
+        <TD><Badge label={p.status==="selesai"?"✅ Selesai":p.status==="disiapkan"?"🔵 Disiapkan":"⏳ Pending"} color={p.status==="selesai"?C.ok:p.status==="disiapkan"?C.dis:C.warn}/></TD>
         <TD><div style={{display:"flex",gap:6}}><Ghost onClick={()=>onView(p)} style={{padding:"5px 10px",fontSize:12}}>👁️</Ghost>{canEdit&&<Ghost onClick={()=>hapus(p)} style={{padding:"5px 10px",fontSize:12,color:C.err}}>🗑️</Ghost>}</div></TD>
         </tr>
       ))}</tbody></Tbl><Pg page={pg} total={Math.ceil(list.length/PS)} onChange={setPg}/></>}
@@ -601,22 +720,20 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
   const process=async()=>{
     setSaving(true);setDebugInfo(null);
     try{
-      const res=await apPost({action:"processOrder",paketId:found.id,items:found.items});
+      // GAS processOrder: baca items dari sheet (fresh), simpan transaksi, update status
+      const res=await apPost({action:"processOrder",paketId:found.id});
       console.log("processOrder:",res);
-      if(res&&res.log){const failed=res.log.filter(l=>l.includes("NOT FOUND")||l.includes("SKIP"));if(failed.length>0){setDebugInfo({log:res.log,failed});showNotif("⚠️ Ada stok tidak ditemukan! Lihat debug di bawah.","err");setSaving(false);return;}}
-      const detail=`${found.nama} · ${found.kode}`;
-      const orderQty=found.items.reduce((s,i)=>s+(parseFloat(i.qty)||0),0);
-      await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,qty:parseFloat(orderQty.toFixed(3)),satuan:"item",tanggal:jakartaTime()}});
-      addTrx("outbound",detail);
-      // Update state lokal langsung (instant, tidak perlu reload semua data)
-      setStokVarian(p=>p.map(k=>{
-        const ki=found.items.find(i=>String(i.ref_id||i.refId)===String(k.id));
-        if(!ki)return k;
-        const newSisa=parseFloat(Math.max(0,k.sisa-ki.qty).toFixed(3));
-        const autoArsip=newSisa<=0&&k.kategori==="Kain";
-        return{...k,sisa:newSisa,status:autoArsip?"arsip":"aktif"};
-      }));
+      if(!res||res.error){showNotif("❌ "+(res?.error||"Gagal"),"err");setSaving(false);return;}
+      if(res.log){const failed=res.log.filter(l=>l.includes("NOT FOUND")||l.includes("SKIP"));if(failed.length>0){setDebugInfo({log:res.log,failed});showNotif("⚠️ Ada stok tidak ditemukan!","err");setSaving(false);return;}}
+      // Update stokVarian lokal dari processedItems response
+      if(res.processedItems&&res.processedItems.length>0){
+        setStokVarian(p=>p.map(k=>{
+          const pi=res.processedItems.find(x=>x.ref_id===k.id);
+          return pi?{...k,sisa:pi.newSisa,status:pi.status}:k;
+        }));
+      }
       setPkgs(p=>p.map(x=>x.id===found.id?{...x,status:"selesai"}:x));
+      addTrx("outbound",`${found.nama} · ${found.kode}`);
       showNotif(`✅ Order ${found.kode} berhasil diproses!`);
       setFound(null);setInput("");
     }catch(e){showNotif("Gagal: "+e.message,"err");}
@@ -628,17 +745,13 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
     if(selectedItems.length===0)return showNotif("Pilih minimal 1 item!","err");
     setForceLoading(true);
     try{
-      const res=await apPost({action:"processOrder",paketId:found.id,items:selectedItems});
+      const res=await apPost({action:"processOrder",paketId:found.id,forceItems:selectedItems});
       if(res&&res.log)setDebugInfo({log:res.log});
       const failed=(res?.log||[]).filter(l=>l.includes("NOT FOUND"));
-      if(failed.length>0){
-        showNotif("⚠️ "+failed.length+" item tidak ditemukan, lihat debug","err");
-      }else{
-        const detail=`${found.nama} · ${found.kode} (koreksi stok)`;
-        const qty=selectedItems.reduce((s,i)=>s+(parseFloat(i.qty)||0),0);
-        await apPost({action:"saveTransaksi",payload:{id:genId(),type:"outbound",detail,qty:parseFloat(qty.toFixed(3)),satuan:"item",tanggal:jakartaTime()}});
-        addTrx("outbound",detail);
-        if(onReload)await onReload();
+      if(failed.length>0){showNotif("⚠️ "+failed.length+" item tidak ditemukan, lihat debug","err");}
+      else{
+        if(res.processedItems){setStokVarian(p=>p.map(k=>{const pi=res.processedItems.find(x=>x.ref_id===k.id);return pi?{...k,sisa:pi.newSisa,status:pi.status}:k;}));}
+        addTrx("outbound",`${found.nama} · ${found.kode} (koreksi)`);
         showNotif(`✅ Koreksi berhasil — ${selectedItems.length} item stok dipotong`);
         setForceModal(false);setFound(null);setInput("");
       }
@@ -659,7 +772,7 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
       {notFound&&<div style={{marginTop:14,padding:12,background:"#fff3f3",borderRadius:8,color:C.err,fontSize:13,textAlign:"center"}}>❌ Kode paket tidak ditemukan</div>}
     </Card>
     {found&&<Card style={{marginTop:14}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{fontWeight:700,fontSize:15,color:C.pri}}>📋 Detail Paket</div><Badge label={found.status} color={found.status==="pending"?C.warn:C.ok}/></div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}><div style={{fontWeight:700,fontSize:15,color:C.pri}}>📋 Detail Paket</div><Badge label={found.status==="selesai"?"✅ Selesai":found.status==="disiapkan"?"🔵 Disiapkan":"⏳ Pending"} color={found.status==="selesai"?C.ok:found.status==="disiapkan"?C.dis:C.warn}/></div>
       <div style={{background:"#f9f9f9",borderRadius:8,padding:12,marginBottom:14}}><div style={{fontWeight:700,fontSize:15}}>{found.nama}</div>{found.customer&&<div style={{fontSize:12,color:"#888",marginTop:2}}>👤 {found.customer}</div>}<div style={{fontFamily:"monospace",fontSize:12,color:"#aaa",marginTop:4}}>{found.kode}</div></div>
       {found.items.map((it,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #f5f5f5",fontSize:13}}><span>{it.nama}</span><span style={{fontWeight:600}}>{it.qty} {it.satuan}</span></div>)}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:"2px solid #eee",marginTop:6}}><span style={{fontWeight:700}}>Total HPP</span><span style={{fontWeight:700,fontSize:18,color:C.ok}}>{fmtRp(found.hpp)}</span></div>
@@ -667,6 +780,10 @@ function MenuOrder({pkgs,setPkgs,stokVarian,setStokVarian,addTrx,showNotif,onRel
         ?<div style={{marginTop:10}}>
             <div style={{padding:12,background:"#e8f5e9",borderRadius:8,color:C.ok,textAlign:"center",fontSize:13,marginBottom:8}}>✅ Paket ini sudah diproses</div>
             {role==="owner"&&<Btn onClick={()=>{setForceSelected({});setForceModal(true);}} bg={C.warn} style={{width:"100%",fontSize:13,padding:"10px"}}>🔧 Koreksi Stok (pilih item)</Btn>}
+          </div>
+        :found.status==="pending"
+        ?<div style={{marginTop:10,padding:14,background:"#fff8e1",borderRadius:8,border:"1px solid "+C.warn,fontSize:13,color:"#e65100",textAlign:"center"}}>
+            ⏳ Paket ini belum siap.<br/>Tunggu PIC Finishing menambahkan material terlebih dahulu.
           </div>
         :<Btn onClick={process} loading={saving} bg={C.ok} style={{width:"100%",marginTop:14,padding:"13px",fontSize:15}}>✅ Konfirmasi & Keluarkan Stok</Btn>
       }
@@ -828,13 +945,14 @@ function InboundOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif,role})
 
   const tabBtn=(id,label,color)=><button onClick={()=>setTab(id)} style={{flex:1,padding:"10px 8px",borderRadius:8,border:`2px solid ${tab===id?color:"#ddd"}`,background:tab===id?color+"15":"#fff",color:tab===id?color:"#555",fontWeight:700,cursor:"pointer",fontSize:13}}>{label}</button>;
 
-  // Finishing role: tampilkan Bulk Outbound
+  // Finishing role: tampilkan IO standar (Buat Paket → Tambah ke Paket untuk workflow utama)
   if(role==="finishing") return(
     <div>
-      <div style={{display:"flex",gap:8,marginBottom:16}}>
-        {tabBtn("inbound","📥 Inbound",C.ok)}
-        {tabBtn("bulk","📤 Bulk Outbound",C.err)}
+      <div style={{background:"#e3f2fd",borderRadius:8,padding:"10px 14px",marginBottom:14,fontSize:13,color:C.dis}}>
+        💡 Untuk menambah material ke paket, gunakan menu <b>Buat Paket → Tambah ke Paket</b>.<br/>
+        Halaman ini untuk koreksi stok (inbound/outbound manual).
       </div>
+      <div style={{display:"flex",gap:8,marginBottom:16}}>{tabBtn("inbound","📥 Inbound",C.ok)}{tabBtn("outbound","📤 Outbound",C.err)}</div>
       {tab==="inbound"&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:14}}>
         <Card>
           <div style={{background:"#e8f5e9",borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:12,color:C.ok}}>📥 Tambah stok masuk — pilih kategori dan item</div>
@@ -863,7 +981,6 @@ function InboundOutbound({jenis,stokVarian,setStokVarian,addTrx,showNotif,role})
           );})}
         </Card>
       </div>}
-      {tab==="bulk"&&<BulkOutbound jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif}/>}
     </div>
   );
 
@@ -919,14 +1036,78 @@ function Riwayat({trxs}){
 
 // ─── REKAP BULANAN ───────────────────────────────────────
 function RekapBulanan({trxs,showNotif}){
-  const now=new Date();const [month,setMonth]=useState(now.getMonth());const [year,setYear]=useState(now.getFullYear());const [saving,setSaving]=useState(false);
+  const now=new Date();const [month,setMonth]=useState(now.getMonth());const [year,setYear]=useState(now.getFullYear());
+  const [saving,setSaving]=useState(false);const [rekapData,setRekapData]=useState(null);
   const MONTHS=["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
-  const filtered=useMemo(()=>trxs.filter(t=>{const d=new Date(t.tanggal);return d.getMonth()===month&&d.getFullYear()===year;}),[trxs,month,year]);
-  const simpan=async()=>{setSaving(true);try{await apPost({action:"generateRekap",bulan:month,tahun:year});showNotif("Rekap disimpan!");}catch(e){showNotif("Gagal: "+e.message,"err");}setSaving(false);};
+  const filtered=useMemo(()=>trxs.filter(t=>{
+    const tgl=String(t.tanggal);
+    let d;
+    if(tgl.match(/^\d{2}\/\d{2}\/\d{4}/)){const pts=tgl.split("/");d=new Date(parseInt(pts[2]),parseInt(pts[1])-1,parseInt(pts[0]));}
+    else{d=new Date(tgl);}
+    return d&&!isNaN(d.getTime())&&d.getMonth()===month&&d.getFullYear()===year;
+  }),[trxs,month,year]);
+
+  const simpan=async()=>{
+    setSaving(true);
+    try{
+      const res=await apPost({action:"generateRekap",bulan:month,tahun:year});
+      if(res.recap)setRekapData(res.recap);
+      showNotif("Rekap disimpan!");
+    }catch(e){showNotif("Gagal: "+e.message,"err");}
+    setSaving(false);
+  };
+
+  const BREAKDOWN_COLS=[
+    {key:"kain_meter",label:"Kain",sat:"m"},
+    {key:"interlining_lembar",label:"Interlining",sat:"lbr"},
+    {key:"resletting_pcs",label:"Resletting",sat:"pcs"},
+    {key:"benang_cone",label:"Benang",sat:"cone"},
+    {key:"kancing_pcs",label:"Kancing",sat:"pcs"},
+    {key:"pin_pcs",label:"Pin",sat:"pcs"},
+    {key:"kabak_pcs",label:"Kabak",sat:"pcs"},
+    {key:"tarboosh_pcs",label:"Tarboosh",sat:"pcs"},
+    {key:"plastikzipper_pcs",label:"Plastik Zipper",sat:"pcs"},
+    {key:"hardbox_pcs",label:"Hardbox",sat:"pcs"},
+    {key:"mika_pcs",label:"Mika",sat:"pcs"},
+    {key:"kardus_pcs",label:"Kardus",sat:"pcs"},
+  ];
+
   return(<div>
-    <Card style={{marginBottom:14}}><div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><select value={month} onChange={e=>setMonth(parseInt(e.target.value))} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13}}>{MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}</select><select value={year} onChange={e=>setYear(parseInt(e.target.value))} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13}}>{[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}</select><span style={{fontWeight:700,fontSize:15,color:C.pri}}>Rekap {MONTHS[month]} {year}</span><Btn onClick={simpan} loading={saving} style={{marginLeft:"auto",padding:"8px 16px",fontSize:12}}>💾 Simpan Rekap</Btn></div></Card>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:10,marginBottom:14}}><SC icon="📥" label="Inbound" value={filtered.filter(t=>t.type==="inbound").length+" trx"} color={C.ok}/><SC icon="📤" label="Outbound" value={filtered.filter(t=>t.type==="outbound").length+" trx"} color={C.warn}/><SC icon="📊" label="Total" value={filtered.length+" trx"} color={C.pri}/></div>
-    <Card><div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>Detail Transaksi</div>{filtered.length===0?<div style={{textAlign:"center",padding:40,color:"#ccc"}}>Tidak ada transaksi</div>:<Tbl><TH cols={["Tipe","Keterangan","Tanggal"]}/><tbody>{filtered.map(t=><tr key={t.id}><TD><Badge label={t.type} color={t.type==="inbound"?C.ok:C.warn}/></TD><TD>{t.detail}</TD><TD style={{fontSize:12}}>{String(t.tanggal).split("T")[0]}</TD></tr>)}</tbody></Tbl>}</Card>
+    <Card style={{marginBottom:14}}>
+      <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+        <select value={month} onChange={e=>{setMonth(parseInt(e.target.value));setRekapData(null);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13}}>{MONTHS.map((m,i)=><option key={i} value={i}>{m}</option>)}</select>
+        <select value={year} onChange={e=>{setYear(parseInt(e.target.value));setRekapData(null);}} style={{border:"1px solid #ddd",borderRadius:8,padding:"9px 12px",fontSize:13}}>{[2024,2025,2026,2027].map(y=><option key={y} value={y}>{y}</option>)}</select>
+        <span style={{fontWeight:700,fontSize:15,color:C.pri}}>Rekap {MONTHS[month]} {year}</span>
+        <Btn onClick={simpan} loading={saving} style={{marginLeft:"auto",padding:"8px 16px",fontSize:12}}>💾 Generate & Simpan Rekap</Btn>
+      </div>
+    </Card>
+
+    {/* Stats from trxs (local) */}
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:10,marginBottom:14}}>
+      <SC icon="📥" label="Inbound" value={filtered.filter(t=>t.type==="inbound").length+" trx"} color={C.ok}/>
+      <SC icon="📤" label="Outbound" value={filtered.filter(t=>t.type==="outbound").length+" trx"} color={C.warn}/>
+      <SC icon="📊" label="Total Trx" value={filtered.length} color={C.pri}/>
+      {rekapData&&<SC icon="📋" label="Paket Selesai" value={rekapData.total_paket||0} color={C.dis}/>}
+      {rekapData&&<SC icon="💰" label="Total HPP" value={fmtRp(rekapData.total_hpp||0)} color={C.ok}/>}
+    </div>
+
+    {/* Breakdown material — tampil setelah generate rekap */}
+    {rekapData&&<Card style={{marginBottom:14}}>
+      <div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>📦 Breakdown Material Terpakai</div>
+      <Tbl><TH cols={["Kategori","Jumlah","Satuan"]}/><tbody>
+        {BREAKDOWN_COLS.filter(c=>(rekapData[c.key]||0)>0).map(c=>(
+          <tr key={c.key}><TD><b>{c.label}</b></TD><TD style={{fontWeight:700,color:C.ok}}>{rekapData[c.key]}</TD><TD>{c.sat}</TD></tr>
+        ))}
+        {BREAKDOWN_COLS.every(c=>!(rekapData[c.key]>0))&&<tr><td colSpan={3} style={{textAlign:"center",padding:20,color:"#ccc"}}>Tidak ada data breakdown — pastikan paket_items sudah punya kolom kategori</td></tr>}
+      </tbody></Tbl>
+    </Card>}
+
+    {/* Transaksi detail */}
+    <Card>
+      <div style={{fontWeight:700,fontSize:14,color:C.pri,marginBottom:12}}>Detail Transaksi</div>
+      {filtered.length===0?<div style={{textAlign:"center",padding:40,color:"#ccc"}}>Tidak ada transaksi bulan ini</div>
+      :<Tbl><TH cols={["Tipe","Keterangan","Tanggal"]}/><tbody>{filtered.map(t=><tr key={t.id}><TD><Badge label={t.type} color={t.type==="inbound"?C.ok:C.warn}/></TD><TD style={{whiteSpace:"pre-line",fontSize:13}}>{t.detail}</TD><TD style={{fontSize:12,whiteSpace:"nowrap"}}>{String(t.tanggal).slice(0,16)}</TD></tr>)}</tbody></Tbl>}
+    </Card>
   </div>);
 }
 
@@ -1041,7 +1222,7 @@ function App(){
     case "nilai-stok":   return <NilaiStok jenis={jenis} stokVarian={stokVarian}/>;
     case "master-harga": return <MasterHarga jenis={jenis} setJenis={setJenis} showNotif={showNotif} role={role}/>;
     case "stok-varian":  return <StokVarian jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} showNotif={showNotif} addTrx={addTrx} role={role}/>;
-    case "buat-paket":   return <BuatPaket jenis={jenis} stokVarian={stokVarian} pkgs={pkgs} setPkgs={setPkgs} showNotif={showNotif}/>;
+    case "buat-paket":   return <BuatPaket jenis={jenis} stokVarian={stokVarian} pkgs={pkgs} setPkgs={setPkgs} showNotif={showNotif} role={role}/>;
     case "daftar-paket": return <DaftarPaket pkgs={pkgs} setPkgs={setPkgs} onView={setViewPaket} showNotif={showNotif} role={role}/>;
     case "menu-order":   return <MenuOrder pkgs={pkgs} setPkgs={setPkgs} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif} onReload={loadAll} apiUrl={API} role={role}/>;
     case "inbound":      return <InboundOutbound jenis={jenis} stokVarian={stokVarian} setStokVarian={setStokVarian} addTrx={addTrx} showNotif={showNotif} role={role}/>;
